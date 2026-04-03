@@ -1,0 +1,5 @@
+data/
+.env
+oldwhale-api
+*.exe
+.DS_Store
