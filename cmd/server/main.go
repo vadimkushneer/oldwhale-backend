@@ -63,7 +63,11 @@ func main() {
 
 	addr := os.Getenv("HTTP_ADDR")
 	if addr == "" {
-		addr = ":8080"
+		if p := os.Getenv("PORT"); p != "" {
+			addr = ":" + p
+		} else {
+			addr = ":8080"
+		}
 	}
 
 	corsOrigin := os.Getenv("CORS_ORIGIN")

@@ -30,6 +30,8 @@ Schema is equivalent on both: a single `users` table (`id`, `login`, `email`, `p
 | **`CORS_ORIGIN`** | No | Single allowed browser `Origin` (e.g. `https://youruser.github.io` for GitHub Pages). If unset, the API sends `Access-Control-Allow-Origin: *`. |
 | **`ADMIN_LOGIN`**, **`ADMIN_PASSWORD`**, **`ADMIN_EMAIL`** | No | Used only when the database has **zero** users to create the first admin. |
 | **`JWT_SECRET`** | Strongly recommended in production | Signing key for JWTs (16+ characters). |
+| **`PORT`** | Set by many hosts (e.g. App Platform) | Listen address is `:$PORT` when **`HTTP_ADDR`** is unset. |
+| **`HTTP_ADDR`** | No | If set (e.g. `:8080`), overrides **`PORT`**. On DigitalOcean App Platform, prefer leaving this unset so **`PORT`** is used. |
 
 SQLite-only details: the process needs write access to the directory containing the DB file (and WAL files next to it).
 
@@ -74,6 +76,18 @@ Redeploy after changing environment variables.
 
 - `GET https://<your-app>.ondigitalocean.app/health` → `{"status":"ok"}` (uses DB `Ping()`).
 - Open the GitHub Pages site, register/login; if the browser reports CORS errors, fix `CORS_ORIGIN` or temporarily leave it unset for `*`.
+
+### App Platform build & run (Heroku Go buildpack)
+
+DigitalOcean’s Go apps often use the **Heroku Go buildpack**, which parses `go.mod` and can auto-generate a **Procfile**. Your logs showed:
+
+- **Invalid `go` version** — DigitalOcean’s parser can reject three-part lines such as **`go 1.25.0`** (`invalid go version … must match format 1.23`). This repo uses **`go 1.24`** (two-part form) plus **`toolchain go1.24.11`** so local `go mod tidy` stays reproducible. **`github.com/jackc/pgx/v5`** is pinned to **v5.6.x** (not v5.9+) so the module graph does not force **Go 1.25**, which the buildpack may not understand yet.
+
+- **Custom build command vs Procfile** — If the **custom build command** is `go build … -o app ./cmd/server`, the runnable binary is **`./app`**. The buildpack’s auto-Procfile would otherwise point at **`bin/server`**. The repo includes a **[Procfile](Procfile)** with `web: ./app` so the **web** process runs the same binary the custom build produces.
+
+- **`PORT` vs `HTTP_ADDR`** — App Platform injects **`PORT`**. The server uses **`HTTP_ADDR`** if set; otherwise it listens on **`:` + `PORT`**; otherwise **`:8080`**. For typical DO deploys, **remove `HTTP_ADDR`** from environment variables (or leave it empty) so **`PORT`** is used. If you keep `HTTP_ADDR`, set it to the port the platform expects (often still bind to `:$PORT`).
+
+- **`DATABASE_URL` at runtime** — Postgres connection must be available when the **container runs**, not only at build time. In **Settings → oldwhale-backend component → Environment Variables**, ensure **`DATABASE_URL`** is defined for the running service (same as or in addition to build, per DO UI). If it is build-only, the app will fall back to SQLite on ephemeral disk and data will not match your managed database.
 
 ---
 
