@@ -235,6 +235,18 @@ func (s *Server) AdminDeleteUser(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *Server) Health(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonErr(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	if err := s.DB.Ping(); err != nil {
+		jsonErr(w, http.StatusServiceUnavailable, "db unavailable")
+		return
+	}
+	jsonOK(w, map[string]string{"status": "ok"})
+}
+
 func CORS(allowed string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
