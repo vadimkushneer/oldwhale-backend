@@ -15,15 +15,7 @@ import (
 func main() {
 	_ = godotenv.Load()
 
-	dbPath := os.Getenv("DB_PATH")
-	if dbPath == "" {
-		dbPath = "./data/oldwhale.db"
-	}
-	if err := os.MkdirAll("./data", 0o755); err != nil {
-		log.Fatal(err)
-	}
-
-	d, err := db.Open(dbPath)
+	d, err := db.OpenFromEnv()
 	if err != nil {
 		log.Fatal(err)
 	}

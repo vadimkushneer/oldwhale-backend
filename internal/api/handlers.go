@@ -1,7 +1,6 @@
 package api
 
 import (
-	"database/sql"
 	"encoding/json"
 	"net/http"
 	"os"
@@ -15,7 +14,7 @@ import (
 )
 
 type Server struct {
-	DB        *sql.DB
+	DB        *db.Database
 	JWTSecret []byte
 	JWTTTL    time.Duration
 }
@@ -267,7 +266,7 @@ func CORS(allowed string) func(http.Handler) http.Handler {
 	}
 }
 
-func SeedAdmin(d *sql.DB) error {
+func SeedAdmin(d *db.Database) error {
 	n, err := db.CountUsers(d)
 	if err != nil || n > 0 {
 		return err
