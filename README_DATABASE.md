@@ -42,6 +42,23 @@ postgres://USER:PASSWORD@HOST:25060/DATABASE?sslmode=require
 
 CORS, health checks, buildpack vs Dockerfile notes: **[README_DOCKER.md](README_DOCKER.md)** and the “App Platform build & run” section below.
 
+### DO App Platform: DATABASE_URL not substituted
+
+That string is a **DigitalOcean bindable placeholder**. App Platform is supposed to replace `${your-db-component.DATABASE_URL}` with a real `postgres://…` URI **before** your container starts. If the process still sees the literal `${…}`, the driver fails and health checks get **connection refused** because the server never listens.
+
+**Fix (pick one):**
+
+1. **Bindable reference (recommended when the DB is part of the same app)**  
+   - In the control panel, add **PostgreSQL** as a **database component** of this app (or confirm its **component name**, e.g. `production-database`).  
+   - On the **web service** (the component that runs this API), open **Environment variables** → set **`DATABASE_URL`** for **Runtime** (and **Build** only if your setup requires DB access at build, which this app does not).  
+   - Set the value using **Insert reference** → choose that database → **`DATABASE_URL`**, so the UI stores the bindable (same idea as `${db-name.DATABASE_URL}` in an [app spec](https://docs.digitalocean.com/products/app-platform/reference/app-specification/)).  
+   - The segment before `.DATABASE_URL` must be the **exact** database component `name` from your app. After deploy, use **Runtime logs** or **Console** and `echo "$DATABASE_URL"` — you should see `postgres://…`, not `${…}`.
+
+2. **Pasted URI (works for standalone managed DBs or when bindables do not apply)**  
+   Copy the **Connection string** from the managed database’s **Connection details** and set **`DATABASE_URL`** on the web service to that full URI (often with `sslmode=require`). Treat it as a secret; rotate if it leaks.
+
+**Common mistakes:** defining **`DATABASE_URL`** only under **build-time** envs; using a bindable for a database **outside** this app without pasting a real URI; typing `${…}` as plain text without the platform treating it as a reference. Official overview: [How to use environment variables in App Platform](https://docs.digitalocean.com/products/app-platform/how-to/use-environment-variables/).
+
 ### App Platform build & run (Heroku Go buildpack)
 
 If you deploy **without** Docker and use the Go buildpack:

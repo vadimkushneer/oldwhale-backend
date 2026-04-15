@@ -22,6 +22,18 @@ func OpenFromEnv() (*Database, error) {
 	if url == "" {
 		return nil, fmt.Errorf("DATABASE_URL is required: set it to a PostgreSQL connection URI (see README_DOCKER.md and README_DATABASE.md)")
 	}
+	// Strip a single pair of surrounding quotes (some dashboards store values that way).
+	if len(url) >= 2 {
+		if url[0] == '"' && url[len(url)-1] == '"' {
+			url = url[1 : len(url)-1]
+		} else if url[0] == '\'' && url[len(url)-1] == '\'' {
+			url = url[1 : len(url)-1]
+		}
+	}
+	url = strings.TrimSpace(url)
+	if strings.Contains(url, "${") {
+		return nil, fmt.Errorf("DATABASE_URL still contains ${...} (got %q): this is an App Platform bindable that was not resolved to a postgres URI. Put DATABASE_URL on the web component at runtime (not only build time), use insert reference so the name matches your database component, or paste a full postgres://… string from the database connection UI — see README_DATABASE.md § DigitalOcean App Platform", url)
+	}
 	inner, err := sql.Open("pgx", url)
 	if err != nil {
 		return nil, err

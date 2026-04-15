@@ -114,7 +114,7 @@ In **App Platform → Settings → Components → your web service**:
 
 | Variable | Purpose |
 |----------|---------|
-| **`DATABASE_URL`** | Full Postgres URI (from DO database UI or “Connection” on a linked DB resource). **Runtime** (and build if your UI splits them). |
+| **`DATABASE_URL`** | Full `postgres://…` URI, or an App Platform bindable that resolves to one (see [README_DATABASE.md](README_DATABASE.md#do-app-platform-database_url-not-substituted)). Must be set for the **web** component at **runtime**; a literal unresolved `${…}` value will crash startup and fail health checks. |
 | **`JWT_SECRET`** | 16+ random characters. |
 | **`CORS_ORIGIN`** | Your frontend origin, e.g. `https://youruser.github.io`. |
 

@@ -34,7 +34,7 @@ Set **`JWT_SECRET`** (16+ chars). Set **`CORS_ORIGIN`** for your frontend (e.g. 
 
 ## Deploy (DigitalOcean, etc.)
 
-Use the **[Dockerfile](Dockerfile)** on App Platform (or another registry) so production matches local Docker. Set **`DATABASE_URL`**, **`JWT_SECRET`**, **`PORT`** / **`HTTP_ADDR`** as in [README_DOCKER.md](README_DOCKER.md) and [README_DATABASE.md](README_DATABASE.md).
+Use the **[Dockerfile](Dockerfile)** on App Platform (or another registry) so production matches local Docker. Set **`DATABASE_URL`**, **`JWT_SECRET`**, **`PORT`** / **`HTTP_ADDR`** as in [README_DOCKER.md](README_DOCKER.md) and [README_DATABASE.md](README_DATABASE.md). On **DigitalOcean App Platform**, if **`DATABASE_URL`** stays a literal `${db-name.DATABASE_URL}` string, the deploy will fail until the bindable resolves or you paste a real URI—see [README_DATABASE.md — DO App Platform: DATABASE_URL not substituted](README_DATABASE.md#do-app-platform-database_url-not-substituted).
 
 ## API (summary)
 
