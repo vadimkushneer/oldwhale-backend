@@ -1,25 +1,50 @@
 # Old Whale — backend
 
-Go HTTP API: JWT authentication, **SQLite or PostgreSQL** storage (see [README_DATABASE.md](README_DATABASE.md)), user registration/login, and an **admin** area (list users, create test accounts, change role, disable, delete).
+Go HTTP API: JWT authentication, **PostgreSQL-only** persistence ([README_DATABASE.md](README_DATABASE.md)), user registration/login, and an **admin** area (list users, create test accounts, change role, disable, delete).
 
-## Run
+**Local stack (Docker):** [README_DOCKER.md](README_DOCKER.md) — API and Postgres each run in their own container; **`DATABASE_URL`** is required everywhere.
+
+## Run (local, recommended)
 
 ```bash
-cp .env.example .env   # optional
+cd oldwhale-backend
+docker compose up --build
+```
+
+- **API:** [http://localhost:8080](http://localhost:8080)  
+- **Swagger UI:** [http://localhost:8080/swagger](http://localhost:8080/swagger)  
+- **OpenAPI:** [http://localhost:8080/openapi.yaml](http://localhost:8080/openapi.yaml)  
+
+Postgres is the `db` service in [docker-compose.yml](docker-compose.yml) (credentials there are **for local use only**). **`docker compose up --build` does not wipe your data** — it lives in the named Docker volume `ow_pgdata` until you run `docker compose down -v` or remove that volume. Details: [README_DOCKER.md](README_DOCKER.md#database-persistence-with-docker-compose).
+
+### Run on the host with `go run` (optional)
+
+You need a reachable Postgres and **`DATABASE_URL`** (see `.env.example`). Example after `docker compose up -d db` only:
+
+```bash
+cp .env.example .env   # edit DATABASE_URL if needed
 go run ./cmd/server
 ```
 
-Default listen: `:8080`. Without `DATABASE_URL`, first run creates `./data/oldwhale.db` and seeds an **admin** user if the database is empty. With **`DATABASE_URL`** (e.g. Render Postgres), the app uses PostgreSQL instead—see [README_DATABASE.md](README_DATABASE.md).
+Without **`DATABASE_URL`**, the server exits on startup.
 
-- Login: `admin` / `admin123` (override with `ADMIN_LOGIN`, `ADMIN_PASSWORD`, `ADMIN_EMAIL`).
+- First admin when DB is empty: `admin` / `admin123` unless you set **`ADMIN_*`** env vars.
 
-Set `JWT_SECRET` (16+ chars). Set `CORS_ORIGIN` to your frontend origin (e.g. `http://localhost:5173` for Vite dev, or `https://youruser.github.io` for GitHub Pages—no path). See [README_DATABASE.md](README_DATABASE.md) for Postgres on DigitalOcean / Render.
+Set **`JWT_SECRET`** (16+ chars). Set **`CORS_ORIGIN`** for your frontend (e.g. `http://localhost:5173` or `https://youruser.github.io` — origin only, no path).
+
+## Deploy (DigitalOcean, etc.)
+
+Use the **[Dockerfile](Dockerfile)** on App Platform (or another registry) so production matches local Docker. Set **`DATABASE_URL`**, **`JWT_SECRET`**, **`PORT`** / **`HTTP_ADDR`** as in [README_DOCKER.md](README_DOCKER.md) and [README_DATABASE.md](README_DATABASE.md).
 
 ## API (summary)
+
+**Swagger:** `GET /swagger` — **OpenAPI:** `GET /openapi.yaml` (`internal/api/openapi.yaml`).
 
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/health` | — | Liveness; checks DB `Ping()` |
+| GET | `/swagger` | — | Swagger UI |
+| GET | `/openapi.yaml` | — | OpenAPI 3.0 (YAML) |
 | POST | `/api/auth/register` | — | Register; returns JWT |
 | POST | `/api/auth/login` | — | Login; returns JWT |
 | GET | `/api/me` | Bearer | Current user |

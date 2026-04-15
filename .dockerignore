@@ -1,0 +1,10 @@
+.git
+.gitignore
+*.md
+.env
+.env.*
+!.env.example
+dist
+tmp
+*.log
+.DS_Store

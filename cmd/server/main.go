@@ -39,6 +39,8 @@ func main() {
 	mux.HandleFunc("POST /api/auth/register", srv.Register)
 	mux.HandleFunc("POST /api/auth/login", srv.Login)
 	mux.HandleFunc("GET /health", srv.Health)
+	mux.HandleFunc("GET /openapi.yaml", api.OpenAPISpec)
+	mux.HandleFunc("GET /swagger", api.SwaggerUI)
 
 	authStack := api.BearerUser(secret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {

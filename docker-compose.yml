@@ -1,0 +1,40 @@
+# Local stack: API container + PostgreSQL container only (no SQLite).
+# Usage: docker compose up --build
+# API: http://localhost:8080  Swagger: http://localhost:8080/swagger
+#
+# Data persistence: Postgres uses named volume "ow_pgdata" (see bottom). Rebuilds do NOT
+# remove it. Data is removed only with: docker compose down -v  OR  docker volume rm …
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ow
+      POSTGRES_PASSWORD: owlocal
+      POSTGRES_DB: ow
+    ports:
+      - "5432:5432"
+    volumes:
+      - ow_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ow -d ow"]
+      interval: 3s
+      timeout: 5s
+      retries: 15
+      start_period: 10s
+
+  api:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://ow:owlocal@db:5432/ow?sslmode=disable
+      JWT_SECRET: local-dev-change-me-to-32-chars-min!!
+      CORS_ORIGIN: http://localhost:5173
+      PORT: "8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  ow_pgdata:

@@ -1,4 +1,5 @@
 data/
+.docker/pgdata/
 .env
 oldwhale-api
 *.exe
