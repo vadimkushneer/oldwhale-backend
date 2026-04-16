@@ -30,7 +30,7 @@ Without **`DATABASE_URL`**, the server exits on startup.
 
 - First admin when DB is empty: `admin` / `admin123` unless you set **`ADMIN_*`** env vars.
 
-Set **`JWT_SECRET`** (16+ chars). Set **`CORS_ORIGIN`** for your frontend (e.g. `http://localhost:5173` or `https://youruser.github.io` — origin only, no path).
+Set **`JWT_SECRET`** (16+ chars). Set **`CORS_ORIGIN`** for your frontend as a **plain text** value (e.g. `http://localhost:5173` or `https://youruser.github.io` — **origin only, no path**). On DigitalOcean App Platform, do **not** use an encrypted secret or bindable for `CORS_ORIGIN`; if the env value looks like `EV[...]`, browsers will reject it. Use a normal environment string, or leave unset for `*`.
 
 ## Deploy (DigitalOcean, etc.)
 

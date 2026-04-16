@@ -3,7 +3,9 @@ package main
 import (
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -73,10 +75,30 @@ func main() {
 		}
 	}
 
-	corsOrigin := os.Getenv("CORS_ORIGIN")
+	corsOrigin := normalizeCORSOrigin(os.Getenv("CORS_ORIGIN"))
 
 	handler := api.CORS(corsOrigin)(mux)
 
 	log.Printf("Old Whale API listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, handler))
+}
+
+// normalizeCORSOrigin returns a value suitable for Access-Control-Allow-Origin, or "" to mean wildcard.
+// App Platform / dashboards sometimes store a mistaken "secret" in CORS_ORIGIN (e.g. ciphertext starting with "EV[");
+// that is not a valid origin and browsers reject it — treat as unset.
+func normalizeCORSOrigin(raw string) string {
+	o := strings.TrimSpace(raw)
+	o = strings.Trim(o, `"'`)
+	if o == "" {
+		return ""
+	}
+	if o == "*" {
+		return "*"
+	}
+	u, err := url.Parse(o)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		log.Printf("warning: CORS_ORIGIN is not a valid http(s) origin (raw=%q); using Access-Control-Allow-Origin: *", raw)
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
 }
