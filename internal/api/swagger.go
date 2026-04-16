@@ -8,6 +8,9 @@ import (
 //go:embed openapi.yaml
 var openAPISpec []byte
 
+//go:embed openapi.json
+var openAPISpecJSON []byte
+
 const swaggerUIPage = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -42,6 +45,16 @@ func OpenAPISpec(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
 	_, _ = w.Write(openAPISpec)
+}
+
+// OpenAPISpecJSON serves the embedded OpenAPI 3 document (JSON).
+func OpenAPISpecJSON(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonErr(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	_, _ = w.Write(openAPISpecJSON)
 }
 
 // SwaggerUI serves an HTML page that loads Swagger UI and points it at /openapi.yaml.

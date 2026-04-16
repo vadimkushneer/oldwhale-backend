@@ -8,7 +8,11 @@ info:
 
     **Authentication:** Send `Authorization: Bearer <token>` for protected routes. Admin routes require a JWT whose payload includes `role: "admin"`.
 
-    **CORS:** When `CORS_ORIGIN` is unset, responses use `Access-Control-Allow-Origin: *`. Preflight `OPTIONS` returns **204** with CORS headers for allowed methods.
+    **JWT payload (HS256):** Claims include `uid` (int64 user id), `role` (`user` or `admin`), plus standard `iat` / `exp`. Default token lifetime is **72 hours** unless the server is configured otherwise.
+
+    **Discovery:** Same spec is served as **`GET /openapi.yaml`** (YAML) and **`GET /openapi.json`** (JSON). Interactive docs: **`GET /swagger`** (Swagger UI).
+
+    **CORS:** When `CORS_ORIGIN` is unset, responses use `Access-Control-Allow-Origin: *`. Preflight `OPTIONS` returns **204** with CORS headers for allowed methods (`GET`, `POST`, `PATCH`, `DELETE`). Allowed request header: `Authorization`, `Content-Type`.
   version: 1.0.0
 
 servers:
@@ -337,7 +341,10 @@ paths:
     delete:
       tags: [Admin]
       summary: Delete a user (admin)
-      description: Requires Bearer JWT with **admin** role. Cannot delete your own account.
+      description: |
+        Requires Bearer JWT with **admin** role. Cannot delete your own account.
+
+        **Note:** The implementation returns **204** with an empty body when the SQL `DELETE` succeeds, including when no row matched the id (no separate **404**).
       operationId: deleteAdminUser
       security:
         - BearerAuth: []
@@ -381,7 +388,9 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: JWT returned by `/api/auth/login` or `/api/auth/register`.
+      description: |
+        JWT returned by `POST /api/auth/login` or `POST /api/auth/register` (HS256).
+        Payload includes `uid` (user id), `role`, and registered `iat` / `exp` claims.
 
   schemas:
     Error:

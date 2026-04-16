@@ -1,0 +1,263 @@
+{
+	"info": {
+		"_postman_id": "a1f2c3d4-5e6b-7a89-0cde-oldwhale-api01",
+		"name": "Old Whale API",
+		"description": "Collection aligned with `internal/api/openapi.yaml`: health, JWT auth (register/login), current user (`/api/me`), and admin user CRUD.\n\n**Setup:** Set collection variable `baseUrl` (default `http://localhost:8080`). After **Login** or **Register**, the `token` variable is filled automatically for Bearer requests.\n\n**Auth:** `Authorization: Bearer {{token}}` on protected routes. Admin routes require `role: admin` in the JWT.\n\n**Errors:** JSON body `{ \"error\": \"message\" }` with appropriate HTTP status.",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+	},
+	"variable": [
+		{
+			"key": "baseUrl",
+			"value": "http://localhost:8080"
+		},
+		{
+			"key": "token",
+			"value": ""
+		},
+		{
+			"key": "userId",
+			"value": "1",
+			"description": "Target user id for PATCH/DELETE admin requests"
+		}
+	],
+	"item": [
+		{
+			"name": "Documentation",
+			"item": [
+				{
+					"name": "OpenAPI YAML (raw)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": "{{baseUrl}}/openapi.yaml"
+					},
+					"response": []
+				},
+				{
+					"name": "OpenAPI JSON (raw)",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": "{{baseUrl}}/openapi.json"
+					},
+					"response": []
+				},
+				{
+					"name": "Swagger UI",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": "{{baseUrl}}/swagger"
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Health",
+			"item": [
+				{
+					"name": "Health",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": "{{baseUrl}}/health",
+						"description": "Returns `{\"status\":\"ok\"}` when PostgreSQL answers Ping(). **503** if DB unavailable."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Auth (no Bearer)",
+			"item": [
+				{
+					"name": "Register",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"try {",
+									"  var j = pm.response.json();",
+									"  if (j && j.token) pm.collectionVariables.set('token', j.token);",
+									"} catch (e) {}",
+									""
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"login\": \"demo_user\",\n  \"email\": \"demo@example.com\",\n  \"password\": \"secret12\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": "{{baseUrl}}/api/auth/register",
+						"description": "Creates role `user`. Login min length 2, password min 6, email must contain `@`. **409** if login/email taken. **200** returns `{ token, user }`."
+					},
+					"response": []
+				},
+				{
+					"name": "Login",
+					"event": [
+						{
+							"listen": "test",
+							"script": {
+								"exec": [
+									"try {",
+									"  var j = pm.response.json();",
+									"  if (j && j.token) pm.collectionVariables.set('token', j.token);",
+									"} catch (e) {}",
+									""
+								],
+								"type": "text/javascript"
+							}
+						}
+					],
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"login\": \"admin\",\n  \"password\": \"admin123\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": "{{baseUrl}}/api/auth/login",
+						"description": "Matches seeded admin from env by default (see `.env.example`). **401** invalid credentials; **403** if account disabled."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Me (Bearer)",
+			"auth": {
+				"type": "bearer",
+				"bearer": [
+					{
+						"key": "token",
+						"value": "{{token}}",
+						"type": "string"
+					}
+				]
+			},
+			"item": [
+				{
+					"name": "Get current user",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": "{{baseUrl}}/api/me",
+						"description": "Requires valid JWT. **401** if missing/invalid token, user missing, or disabled."
+					},
+					"response": []
+				}
+			]
+		},
+		{
+			"name": "Admin (Bearer + admin role)",
+			"auth": {
+				"type": "bearer",
+				"bearer": [
+					{
+						"key": "token",
+						"value": "{{token}}",
+						"type": "string"
+					}
+				]
+			},
+			"item": [
+				{
+					"name": "List users",
+					"request": {
+						"method": "GET",
+						"header": [],
+						"url": "{{baseUrl}}/api/admin/users",
+						"description": "**403** if JWT is not admin."
+					},
+					"response": []
+				},
+				{
+					"name": "Create user",
+					"request": {
+						"method": "POST",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"login\": \"testbot\",\n  \"email\": \"testbot@example.com\",\n  \"password\": \"pass\",\n  \"role\": \"user\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": "{{baseUrl}}/api/admin/users",
+						"description": "Password min **4** for admin-created users. Unknown `role` defaults to `user` in server logic."
+					},
+					"response": []
+				},
+				{
+					"name": "Patch user",
+					"request": {
+						"method": "PATCH",
+						"header": [
+							{
+								"key": "Content-Type",
+								"value": "application/json"
+							}
+						],
+						"body": {
+							"mode": "raw",
+							"raw": "{\n  \"disabled\": false,\n  \"role\": \"user\"\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": "{{baseUrl}}/api/admin/users/{{userId}}",
+						"description": "**404** if user id not found."
+					},
+					"response": []
+				},
+				{
+					"name": "Delete user",
+					"request": {
+						"method": "DELETE",
+						"header": [],
+						"url": "{{baseUrl}}/api/admin/users/{{userId}}",
+						"description": "**204** empty body on success. **400** if deleting self. Note: server returns 204 even if id did not exist (DELETE no-op)."
+					},
+					"response": []
+				}
+			]
+		}
+	]
+}
