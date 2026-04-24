@@ -61,8 +61,13 @@ CREATE TABLE IF NOT EXISTS users (
 	if err != nil {
 		return err
 	}
-	_, err = d.Exec(`CREATE INDEX IF NOT EXISTS idx_users_login ON users(login)`)
-	return err
+	if _, err = d.Exec(`CREATE INDEX IF NOT EXISTS idx_users_login ON users(login)`); err != nil {
+		return err
+	}
+	if err := d.migrateAICatalog(); err != nil {
+		return err
+	}
+	return nil
 }
 
 type User struct {

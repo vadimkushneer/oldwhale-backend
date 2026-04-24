@@ -12,7 +12,7 @@ info:
 
     **Discovery:** Same spec is served as **`GET /openapi.yaml`** (YAML) and **`GET /openapi.json`** (JSON). Interactive docs: **`GET /swagger`** (Swagger UI).
 
-    **CORS:** When `CORS_ORIGIN` is unset, responses use `Access-Control-Allow-Origin: *`. Preflight `OPTIONS` returns **204** with CORS headers for allowed methods (`GET`, `POST`, `PATCH`, `DELETE`). Allowed request header: `Authorization`, `Content-Type`.
+    **CORS:** When `CORS_ORIGIN` is unset, responses use `Access-Control-Allow-Origin: *`. Preflight `OPTIONS` returns **204** with CORS headers for allowed methods (`GET`, `POST`, `PUT`, `PATCH`, `DELETE`). Allowed request header: `Authorization`, `Content-Type`.
   version: 1.0.0
 
 servers:
@@ -28,6 +28,8 @@ tags:
     description: Current authenticated user
   - name: Admin
     description: User administration (JWT with admin role)
+  - name: AiModels
+    description: AI provider groups and model variants (public catalog + admin CRUD)
 
 paths:
   /health:
@@ -177,6 +179,245 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+
+  /api/ai/models:
+    get:
+      tags: [AiModels]
+      summary: Public AI model catalog
+      description: No authentication. Groups and variants ordered by `position`.
+      operationId: getPublicAIModels
+      responses:
+        "200":
+          description: Catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiCatalogPublicResponse"
+        "405":
+          description: Method not allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Database error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/admin/ai/groups:
+    get:
+      tags: [AiModels]
+      summary: List AI groups (admin, nested variants)
+      description: Requires Bearer JWT with **admin** role.
+      operationId: getAdminAIGroups
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Groups with variants
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiGroupListAdminResponse"
+        "401": { description: Missing or invalid Bearer token, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Not an admin, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "405": { description: Method not allowed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "500": { description: Database error, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    post:
+      tags: [AiModels]
+      summary: Create AI group
+      description: Requires admin JWT.
+      operationId: postAdminAIGroup
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiGroupCreateRequest"
+      responses:
+        "200":
+          description: Created group
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiGroupWrapResponse"
+        "400": { description: Bad request, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Forbidden, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: Slug conflict, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "500": { description: Server error, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/admin/ai/groups/order:
+    put:
+      tags: [AiModels]
+      summary: Reorder AI groups
+      description: Body `{ "ids": [1,2,3] }` sets positions 0..n-1 in that order.
+      operationId: putAdminAIGroupsOrder
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiReorderRequest"
+      responses:
+        "204": { description: Success, no body }
+        "400": { description: Bad request, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Forbidden, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "500": { description: Server error, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/admin/ai/groups/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, format: int64, minimum: 1 }
+    patch:
+      tags: [AiModels]
+      summary: Update AI group
+      operationId: patchAdminAIGroup
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiGroupPatchRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiGroupWrapResponse"
+        "400": { description: Bad request, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Forbidden, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: Slug conflict, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "500": { description: Server error, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    delete:
+      tags: [AiModels]
+      summary: Delete AI group (cascade variants)
+      operationId: deleteAdminAIGroup
+      security:
+        - BearerAuth: []
+      responses:
+        "204": { description: Deleted }
+        "400": { description: Bad id, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Forbidden, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "500": { description: Server error, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/admin/ai/groups/{groupId}/variants:
+    parameters:
+      - name: groupId
+        in: path
+        required: true
+        schema: { type: integer, format: int64, minimum: 1 }
+    post:
+      tags: [AiModels]
+      summary: Create variant under group
+      operationId: postAdminAIVariant
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiVariantCreateRequest"
+      responses:
+        "200":
+          description: Created variant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiVariantWrapResponse"
+        "400": { description: Bad request, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Forbidden, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: Group not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: Slug conflict, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "500": { description: Server error, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/admin/ai/groups/{groupId}/variants/order:
+    parameters:
+      - name: groupId
+        in: path
+        required: true
+        schema: { type: integer, format: int64, minimum: 1 }
+    put:
+      tags: [AiModels]
+      summary: Reorder variants in group
+      operationId: putAdminAIVariantsOrder
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiReorderRequest"
+      responses:
+        "204": { description: Success }
+        "400": { description: Invalid reorder, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Forbidden, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "500": { description: Server error, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/admin/ai/variants/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, format: int64, minimum: 1 }
+    patch:
+      tags: [AiModels]
+      summary: Update variant
+      operationId: patchAdminAIVariant
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiVariantPatchRequest"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiVariantWrapResponse"
+        "400": { description: Bad request, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Forbidden, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: Slug conflict, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "500": { description: Server error, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    delete:
+      tags: [AiModels]
+      summary: Delete variant
+      operationId: deleteAdminAIVariant
+      security:
+        - BearerAuth: []
+      responses:
+        "204": { description: Deleted }
+        "400": { description: Bad id, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Forbidden, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "500": { description: Server error, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
 
   /api/admin/users:
     get:
@@ -507,3 +748,145 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/User"
+
+    AiVariantPublic:
+      type: object
+      required: [id, slug, label, is_default]
+      properties:
+        id: { type: integer, format: int64 }
+        slug: { type: string }
+        label: { type: string }
+        is_default: { type: boolean }
+
+    AiGroupPublic:
+      type: object
+      required: [id, slug, label, role, color, free, variants]
+      properties:
+        id: { type: integer, format: int64 }
+        slug: { type: string }
+        label: { type: string }
+        role: { type: string }
+        color: { type: string }
+        free: { type: boolean }
+        variants:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiVariantPublic"
+
+    AiCatalogPublicResponse:
+      type: object
+      required: [groups]
+      properties:
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiGroupPublic"
+
+    AiVariantAdmin:
+      type: object
+      required: [id, group_id, slug, label, is_default, position, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        group_id: { type: integer, format: int64 }
+        slug: { type: string }
+        label: { type: string }
+        is_default: { type: boolean }
+        position: { type: integer }
+        created_at: { type: string, format: date-time }
+
+    AiGroupAdmin:
+      type: object
+      required: [id, slug, label, role, color, free, position, created_at, variants]
+      properties:
+        id: { type: integer, format: int64 }
+        slug: { type: string }
+        label: { type: string }
+        role: { type: string }
+        color: { type: string }
+        free: { type: boolean }
+        position: { type: integer }
+        created_at: { type: string, format: date-time }
+        variants:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiVariantAdmin"
+
+    AiGroupListAdminResponse:
+      type: object
+      required: [groups]
+      properties:
+        groups:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiGroupAdmin"
+
+    AiGroupWrapResponse:
+      type: object
+      required: [group]
+      properties:
+        group:
+          type: object
+          description: Group without nested variants in create/patch response
+          required: [id, slug, label, role, color, free, position, created_at]
+          properties:
+            id: { type: integer, format: int64 }
+            slug: { type: string }
+            label: { type: string }
+            role: { type: string }
+            color: { type: string }
+            free: { type: boolean }
+            position: { type: integer }
+            created_at: { type: string, format: date-time }
+
+    AiVariantWrapResponse:
+      type: object
+      required: [variant]
+      properties:
+        variant:
+          $ref: "#/components/schemas/AiVariantAdmin"
+
+    AiReorderRequest:
+      type: object
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          items: { type: integer, format: int64 }
+
+    AiGroupCreateRequest:
+      type: object
+      required: [slug, label]
+      properties:
+        slug: { type: string }
+        label: { type: string }
+        role: { type: string }
+        color: { type: string }
+        free: { type: boolean }
+        position: { type: integer }
+
+    AiGroupPatchRequest:
+      type: object
+      properties:
+        slug: { type: string }
+        label: { type: string }
+        role: { type: string }
+        color: { type: string }
+        free: { type: boolean }
+        position: { type: integer }
+
+    AiVariantCreateRequest:
+      type: object
+      required: [slug]
+      properties:
+        slug: { type: string }
+        label: { type: string }
+        is_default: { type: boolean }
+        position: { type: integer }
+
+    AiVariantPatchRequest:
+      type: object
+      properties:
+        slug: { type: string }
+        label: { type: string }
+        is_default: { type: boolean }
+        position: { type: integer }

@@ -26,6 +26,9 @@ func main() {
 	if err := api.SeedAdmin(d); err != nil {
 		log.Printf("seed admin: %v", err)
 	}
+	if err := db.SeedAICatalog(d); err != nil {
+		log.Printf("seed ai catalog: %v", err)
+	}
 
 	secret := []byte(os.Getenv("JWT_SECRET"))
 	if len(secret) < 16 {
@@ -44,11 +47,30 @@ func main() {
 	mux.HandleFunc("GET /openapi.yaml", api.OpenAPISpec)
 	mux.HandleFunc("GET /openapi.json", api.OpenAPISpecJSON)
 	mux.HandleFunc("GET /swagger", api.SwaggerUI)
+	mux.HandleFunc("GET /api/ai/models", srv.PublicAIModels)
 
 	authStack := api.BearerUser(secret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/me":
 			api.RequireAuth(http.HandlerFunc(srv.Me)).ServeHTTP(w, r)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/admin/ai/groups":
+			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminListAIGroups))).ServeHTTP(w, r)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/admin/ai/groups":
+			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminCreateAIGroup))).ServeHTTP(w, r)
+		case r.Method == http.MethodPut && r.URL.Path == "/api/admin/ai/groups/order":
+			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminReorderAIGroups))).ServeHTTP(w, r)
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/admin/ai/groups/") && strings.HasSuffix(r.URL.Path, "/variants"):
+			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminCreateAIVariant))).ServeHTTP(w, r)
+		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/api/admin/ai/groups/") && strings.HasSuffix(r.URL.Path, "/variants/order"):
+			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminReorderAIVariants))).ServeHTTP(w, r)
+		case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/api/admin/ai/groups/"):
+			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminPatchAIGroup))).ServeHTTP(w, r)
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/admin/ai/groups/"):
+			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminDeleteAIGroup))).ServeHTTP(w, r)
+		case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/api/admin/ai/variants/"):
+			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminPatchAIVariant))).ServeHTTP(w, r)
+		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/admin/ai/variants/"):
+			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminDeleteAIVariant))).ServeHTTP(w, r)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/admin/users":
 			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminListUsers))).ServeHTTP(w, r)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/admin/users":
