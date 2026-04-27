@@ -1760,6 +1760,10 @@
             "type": "string",
             "format": "date-time"
           },
+          "apiKey": {
+            "type": "string",
+            "description": "Provider API key (admin-only; sensitive)."
+          },
           "variants": {
             "type": "array",
             "items": {
@@ -1826,6 +1830,10 @@
               "created_at": {
                 "type": "string",
                 "format": "date-time"
+              },
+              "apiKey": {
+                "type": "string",
+                "description": "Provider API key (admin-only; sensitive)."
               }
             }
           }
@@ -1881,6 +1889,9 @@
           },
           "position": {
             "type": "integer"
+          },
+          "apiKey": {
+            "type": "string"
           }
         }
       },
@@ -1904,6 +1915,9 @@
           },
           "position": {
             "type": "integer"
+          },
+          "apiKey": {
+            "type": "string"
           }
         }
       },

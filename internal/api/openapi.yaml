@@ -806,6 +806,9 @@ components:
         free: { type: boolean }
         position: { type: integer }
         created_at: { type: string, format: date-time }
+        apiKey:
+          type: string
+          description: Provider API key (admin-only; sensitive).
         variants:
           type: array
           items:
@@ -837,6 +840,9 @@ components:
             free: { type: boolean }
             position: { type: integer }
             created_at: { type: string, format: date-time }
+            apiKey:
+              type: string
+              description: Provider API key (admin-only; sensitive).
 
     AiVariantWrapResponse:
       type: object
@@ -863,6 +869,7 @@ components:
         color: { type: string }
         free: { type: boolean }
         position: { type: integer }
+        apiKey: { type: string }
 
     AiGroupPatchRequest:
       type: object
@@ -873,6 +880,7 @@ components:
         color: { type: string }
         free: { type: boolean }
         position: { type: integer }
+        apiKey: { type: string }
 
     AiVariantCreateRequest:
       type: object

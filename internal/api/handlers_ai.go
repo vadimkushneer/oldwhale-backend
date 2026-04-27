@@ -91,6 +91,7 @@ func (s *Server) AdminListAIGroups(w http.ResponseWriter, r *http.Request) {
 			"role":       g.Role,
 			"color":      g.Color,
 			"free":       g.Free,
+			"apiKey":     g.APIKey,
 			"position":   g.Position,
 			"created_at": g.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 			"variants":   vout,
@@ -100,12 +101,13 @@ func (s *Server) AdminListAIGroups(w http.ResponseWriter, r *http.Request) {
 }
 
 type aiCreateGroupReq struct {
-	Slug     string `json:"slug"`
-	Label    string `json:"label"`
-	Role     string `json:"role"`
-	Color    string `json:"color"`
-	Free     *bool  `json:"free"`
-	Position *int   `json:"position"`
+	Slug     string  `json:"slug"`
+	Label    string  `json:"label"`
+	Role     string  `json:"role"`
+	Color    string  `json:"color"`
+	Free     *bool   `json:"free"`
+	Position *int    `json:"position"`
+	ApiKey   *string `json:"apiKey,omitempty"`
 }
 
 type aiPatchGroupReq struct {
@@ -115,6 +117,7 @@ type aiPatchGroupReq struct {
 	Color    *string `json:"color"`
 	Free     *bool   `json:"free"`
 	Position *int    `json:"position"`
+	ApiKey   *string `json:"apiKey,omitempty"`
 }
 
 type aiReorderReq struct {
@@ -164,7 +167,11 @@ func (s *Server) AdminCreateAIGroup(w http.ResponseWriter, r *http.Request) {
 	if in.Free != nil {
 		free = *in.Free
 	}
-	g, err := db.CreateAIGroup(s.DB, slug, in.Label, strings.TrimSpace(in.Role), color, free, in.Position)
+	apiKey := ""
+	if in.ApiKey != nil {
+		apiKey = strings.TrimSpace(*in.ApiKey)
+	}
+	g, err := db.CreateAIGroup(s.DB, slug, in.Label, strings.TrimSpace(in.Role), color, free, in.Position, apiKey)
 	if err != nil {
 		if isUniqueViolation(err) {
 			jsonErr(w, http.StatusConflict, "slug taken")
@@ -184,6 +191,7 @@ func publicAIGroup(g *db.AIModelGroup, variants []map[string]any) map[string]any
 		"role":       g.Role,
 		"color":      g.Color,
 		"free":       g.Free,
+		"apiKey":     g.APIKey,
 		"position":   g.Position,
 		"created_at": g.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
@@ -237,7 +245,12 @@ func (s *Server) AdminPatchAIGroup(w http.ResponseWriter, r *http.Request) {
 		}
 		color = &c
 	}
-	g, err := db.UpdateAIGroup(s.DB, id, slug, label, role, color, in.Free, in.Position)
+	var apiKey *string
+	if in.ApiKey != nil {
+		t := strings.TrimSpace(*in.ApiKey)
+		apiKey = &t
+	}
+	g, err := db.UpdateAIGroup(s.DB, id, slug, label, role, color, in.Free, in.Position, apiKey)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			jsonErr(w, http.StatusNotFound, "not found")

@@ -17,6 +17,7 @@ type AIModelGroup struct {
 	Color     string    `json:"color"`
 	Free      bool      `json:"free"`
 	Position  int       `json:"position"`
+	APIKey    string    `json:"apiKey,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
@@ -41,6 +42,7 @@ func (d *Database) migrateAICatalog() error {
 	color TEXT NOT NULL DEFAULT '',
 	free INTEGER NOT NULL DEFAULT 0,
 	position INTEGER NOT NULL DEFAULT 0,
+	api_key TEXT NOT NULL DEFAULT '',
 	created_at TEXT NOT NULL
 )`,
 		`CREATE TABLE IF NOT EXISTS ai_model_variants (
@@ -60,6 +62,9 @@ func (d *Database) migrateAICatalog() error {
 		if _, err := d.Exec(s); err != nil {
 			return err
 		}
+	}
+	if _, err := d.Exec(`ALTER TABLE ai_model_groups ADD COLUMN IF NOT EXISTS api_key TEXT NOT NULL DEFAULT ''`); err != nil {
+		return err
 	}
 	return nil
 }
@@ -157,7 +162,7 @@ func SeedAICatalog(d *Database) error {
 // ListAICatalogPublic returns groups with nested variants for GET /api/ai/models.
 func ListAICatalogPublic(d *Database) ([]AIModelGroup, [][]AIModelVariant, error) {
 	rows, err := d.Query(`
-SELECT g.id,g.slug,g.label,g.role,g.color,g.free,g.position,g.created_at,
+SELECT g.id,g.slug,g.label,g.role,g.color,g.free,g.position,g.api_key,g.created_at,
 	v.id,v.slug,v.label,v.is_default,v.position,v.created_at
 FROM ai_model_groups g
 LEFT JOIN ai_model_variants v ON v.group_id = g.id
@@ -189,7 +194,7 @@ func scanCatalogJoinedRows(rows *sql.Rows) ([]AIModelGroup, [][]AIModelVariant, 
 		var vpos sql.NullInt64
 		var vcreated sql.NullString
 		err := rows.Scan(
-			&g.ID, &g.Slug, &g.Label, &g.Role, &g.Color, &gFree, &g.Position, &gCreated,
+			&g.ID, &g.Slug, &g.Label, &g.Role, &g.Color, &gFree, &g.Position, &g.APIKey, &gCreated,
 			&vid, &vslug, &vlabel, &vdef, &vpos, &vcreated,
 		)
 		if err != nil {
@@ -227,7 +232,7 @@ func scanCatalogJoinedRows(rows *sql.Rows) ([]AIModelGroup, [][]AIModelVariant, 
 // GetAIGroupByID returns one group or sql.ErrNoRows.
 func GetAIGroupByID(d *Database, id int64) (*AIModelGroup, error) {
 	row := d.QueryRow(
-		`SELECT id,slug,label,role,color,free,position,created_at FROM ai_model_groups WHERE id=$1`,
+		`SELECT id,slug,label,role,color,free,position,api_key,created_at FROM ai_model_groups WHERE id=$1`,
 		id,
 	)
 	return scanAIGroupRow(row)
@@ -236,7 +241,7 @@ func GetAIGroupByID(d *Database, id int64) (*AIModelGroup, error) {
 // GetAIGroupBySlug returns one group or sql.ErrNoRows.
 func GetAIGroupBySlug(d *Database, slug string) (*AIModelGroup, error) {
 	row := d.QueryRow(
-		`SELECT id,slug,label,role,color,free,position,created_at FROM ai_model_groups WHERE slug=$1`,
+		`SELECT id,slug,label,role,color,free,position,api_key,created_at FROM ai_model_groups WHERE slug=$1`,
 		slug,
 	)
 	return scanAIGroupRow(row)
@@ -246,7 +251,7 @@ func scanAIGroupRow(row scanner) (*AIModelGroup, error) {
 	var g AIModelGroup
 	var created string
 	var free int
-	err := row.Scan(&g.ID, &g.Slug, &g.Label, &g.Role, &g.Color, &free, &g.Position, &created)
+	err := row.Scan(&g.ID, &g.Slug, &g.Label, &g.Role, &g.Color, &free, &g.Position, &g.APIKey, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
@@ -259,7 +264,7 @@ func scanAIGroupRow(row scanner) (*AIModelGroup, error) {
 }
 
 // CreateAIGroup inserts a new group.
-func CreateAIGroup(d *Database, slug, label, role, color string, free bool, position *int) (*AIModelGroup, error) {
+func CreateAIGroup(d *Database, slug, label, role, color string, free bool, position *int, apiKey string) (*AIModelGroup, error) {
 	now := time.Now().UTC().Format(time.RFC3339)
 	pos := 0
 	if position != nil {
@@ -273,8 +278,8 @@ func CreateAIGroup(d *Database, slug, label, role, color string, free bool, posi
 	}
 	var id int64
 	err := d.QueryRow(
-		`INSERT INTO ai_model_groups(slug,label,role,color,free,position,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-		slug, label, role, color, fr, pos, now,
+		`INSERT INTO ai_model_groups(slug,label,role,color,free,position,api_key,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+		slug, label, role, color, fr, pos, apiKey, now,
 	).Scan(&id)
 	if err != nil {
 		return nil, err
@@ -283,7 +288,7 @@ func CreateAIGroup(d *Database, slug, label, role, color string, free bool, posi
 }
 
 // UpdateAIGroup applies non-nil fields.
-func UpdateAIGroup(d *Database, id int64, slug, label, role, color *string, free *bool, position *int) (*AIModelGroup, error) {
+func UpdateAIGroup(d *Database, id int64, slug, label, role, color *string, free *bool, position *int, apiKey *string) (*AIModelGroup, error) {
 	if _, err := GetAIGroupByID(d, id); err != nil {
 		return nil, err
 	}
@@ -318,6 +323,11 @@ func UpdateAIGroup(d *Database, id int64, slug, label, role, color *string, free
 	}
 	if position != nil {
 		if _, err := d.Exec(`UPDATE ai_model_groups SET position=$1 WHERE id=$2`, *position, id); err != nil {
+			return nil, err
+		}
+	}
+	if apiKey != nil {
+		if _, err := d.Exec(`UPDATE ai_model_groups SET api_key=$1 WHERE id=$2`, *apiKey, id); err != nil {
 			return nil, err
 		}
 	}
