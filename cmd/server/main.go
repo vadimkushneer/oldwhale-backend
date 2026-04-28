@@ -48,8 +48,11 @@ func main() {
 	mux.HandleFunc("GET /openapi.json", api.OpenAPISpecJSON)
 	mux.HandleFunc("GET /swagger", api.SwaggerUI)
 	mux.HandleFunc("GET /api/ai/models", srv.PublicAIModels)
+	// Register before mux.Handle("/api/", …) — explicit method+path wins over the /api/ subtree in net/http.
+	mux.HandleFunc("POST /api/ai/chat", srv.AIChat)
 
-	authStack := api.BearerUser(secret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// Protected /api/* routes (JWT optional via BearerUser).
+	apiProtected := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/me":
 			api.RequireAuth(http.HandlerFunc(srv.Me)).ServeHTTP(w, r)
@@ -84,9 +87,9 @@ func main() {
 		default:
 			http.NotFound(w, r)
 		}
-	}))
+	})
 
-	mux.Handle("/api/", authStack)
+	mux.Handle("/api/", api.BearerUser(secret)(apiProtected))
 
 	addr := os.Getenv("HTTP_ADDR")
 	if addr == "" {

@@ -206,6 +206,40 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  /api/ai/chat:
+    post:
+      tags: [AiModels]
+      summary: Chat stub (fixed reply)
+      description: |
+        Public endpoint. Sends user message and selected catalog slugs; currently returns a constant reply (no LLM).
+        Optional `Authorization: Bearer` is ignored for this stub.
+      operationId: postAiChat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiChatRequest"
+      responses:
+        "200":
+          description: Assistant reply
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiChatResponse"
+        "400":
+          description: Invalid JSON or missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "405":
+          description: Method not allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   /api/admin/ai/groups:
     get:
       tags: [AiModels]
@@ -781,6 +815,28 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AiGroupPublic"
+
+    AiChatRequest:
+      type: object
+      required: [message, groupSlug, variantSlug]
+      properties:
+        message:
+          type: string
+          description: Full outgoing user content (instructions, text, inlined attachments).
+        groupSlug:
+          type: string
+          description: Selected AI group slug from the public catalog (e.g. deepseek).
+        variantSlug:
+          type: string
+          description: Selected variant slug within that group.
+
+    AiChatResponse:
+      type: object
+      required: [reply]
+      properties:
+        reply:
+          type: string
+          description: Assistant message text.
 
     AiVariantAdmin:
       type: object

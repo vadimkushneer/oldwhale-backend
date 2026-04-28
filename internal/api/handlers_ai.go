@@ -57,6 +57,33 @@ func (s *Server) PublicAIModels(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, map[string]any{"groups": out})
 }
 
+type aiChatReq struct {
+	Message     string `json:"message"`
+	GroupSlug   string `json:"groupSlug"`
+	VariantSlug string `json:"variantSlug"`
+}
+
+// AIChat is a public stub: validates JSON and returns a fixed reply (no upstream LLM call).
+func (s *Server) AIChat(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonErr(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var in aiChatReq
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		jsonErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	in.Message = strings.TrimSpace(in.Message)
+	in.GroupSlug = strings.TrimSpace(in.GroupSlug)
+	in.VariantSlug = strings.TrimSpace(in.VariantSlug)
+	if in.Message == "" || in.GroupSlug == "" || in.VariantSlug == "" {
+		jsonErr(w, http.StatusBadRequest, "message, groupSlug, and variantSlug required")
+		return
+	}
+	jsonOK(w, map[string]string{"reply": "HELLO FROM OLD WHALE"})
+}
+
 func (s *Server) AdminListAIGroups(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		jsonErr(w, http.StatusMethodNotAllowed, "method not allowed")

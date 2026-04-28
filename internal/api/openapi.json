@@ -31,6 +31,10 @@
     {
       "name": "AiModels",
       "description": "AI provider groups and model variants"
+    },
+    {
+      "name": "AiModels",
+      "description": "AI provider groups and model variants"
     }
   ],
   "paths": {
@@ -1406,6 +1410,58 @@
           }
         }
       }
+    },
+    "/api/ai/chat": {
+      "post": {
+        "tags": [
+          "AiModels"
+        ],
+        "summary": "Chat stub (fixed reply)",
+        "description": "Public stub; returns a constant reply.",
+        "operationId": "postAiChat",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AiChatRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Assistant reply",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiChatResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -1760,10 +1816,6 @@
             "type": "string",
             "format": "date-time"
           },
-          "apiKey": {
-            "type": "string",
-            "description": "Provider API key (admin-only; sensitive)."
-          },
           "variants": {
             "type": "array",
             "items": {
@@ -1830,10 +1882,6 @@
               "created_at": {
                 "type": "string",
                 "format": "date-time"
-              },
-              "apiKey": {
-                "type": "string",
-                "description": "Provider API key (admin-only; sensitive)."
               }
             }
           }
@@ -1889,9 +1937,6 @@
           },
           "position": {
             "type": "integer"
-          },
-          "apiKey": {
-            "type": "string"
           }
         }
       },
@@ -1915,9 +1960,6 @@
           },
           "position": {
             "type": "integer"
-          },
-          "apiKey": {
-            "type": "string"
           }
         }
       },
@@ -1955,6 +1997,36 @@
           },
           "position": {
             "type": "integer"
+          }
+        }
+      },
+      "AiChatRequest": {
+        "type": "object",
+        "required": [
+          "message",
+          "groupSlug",
+          "variantSlug"
+        ],
+        "properties": {
+          "message": {
+            "type": "string"
+          },
+          "groupSlug": {
+            "type": "string"
+          },
+          "variantSlug": {
+            "type": "string"
+          }
+        }
+      },
+      "AiChatResponse": {
+        "type": "object",
+        "required": [
+          "reply"
+        ],
+        "properties": {
+          "reply": {
+            "type": "string"
           }
         }
       }
