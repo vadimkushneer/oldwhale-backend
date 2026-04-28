@@ -48,12 +48,19 @@ func main() {
 	mux.HandleFunc("GET /openapi.json", api.OpenAPISpecJSON)
 	mux.HandleFunc("GET /swagger", api.SwaggerUI)
 	mux.HandleFunc("GET /api/ai/models", srv.PublicAIModels)
-	// Register before mux.Handle("/api/", …) — explicit method+path wins over the /api/ subtree in net/http.
-	mux.HandleFunc("POST /api/ai/chat", srv.AIChat)
+	// Explicit method+path (same idea as /api/ai/models) so this route is always registered; the /api/ subtree switch can miss some paths.
+	mux.Handle(
+		"GET /api/admin/ai/chat-logs",
+		api.BearerUser(secret)(
+			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminListAIChatLogs))),
+		),
+	)
 
 	// Protected /api/* routes (JWT optional via BearerUser).
 	apiProtected := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/ai/chat":
+			srv.AIChat(w, r)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/me":
 			api.RequireAuth(http.HandlerFunc(srv.Me)).ServeHTTP(w, r)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/admin/ai/groups":

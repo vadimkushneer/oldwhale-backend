@@ -6,9 +6,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/oldwhale/backend/internal/db"
@@ -76,6 +79,23 @@ func randomUUIDv4() string {
 	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
 }
 
+func requestClientIP(r *http.Request) string {
+	xff := r.Header.Get("X-Forwarded-For")
+	if xff != "" {
+		for _, p := range strings.Split(xff, ",") {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				return p
+			}
+		}
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}
+
 // AIChat is a public stub: validates JSON and returns a fixed reply (no upstream LLM call).
 func (s *Server) AIChat(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -94,11 +114,167 @@ func (s *Server) AIChat(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusBadRequest, "message, groupSlug, and variantSlug required")
 		return
 	}
+	reply := "HELLO FROM OLD WHALE"
+	userMessageID := randomUUIDv4()
+	assistantMessageID := randomUUIDv4()
+
+	var uid *int64
+	if id, ok := UserID(r); ok {
+		uid = &id
+	}
+	ipStr := requestClientIP(r)
+	uaStr := strings.TrimSpace(r.Header.Get("User-Agent"))
+	var ipPtr, uaPtr *string
+	if ipStr != "" {
+		ipPtr = &ipStr
+	}
+	if uaStr != "" {
+		uaPtr = &uaStr
+	}
+	if err := db.InsertAIChatLog(s.DB, uid, in.Message, in.GroupSlug, in.VariantSlug, reply, userMessageID, assistantMessageID, ipPtr, uaPtr); err != nil {
+		log.Printf("ai chat log insert: %v", err)
+	}
+
 	jsonOK(w, map[string]any{
-		"reply":               "HELLO FROM OLD WHALE",
-		"userMessageId":       randomUUIDv4(),
-		"assistantMessageId":  randomUUIDv4(),
+		"reply":              reply,
+		"userMessageId":      userMessageID,
+		"assistantMessageId": assistantMessageID,
 	})
+}
+
+func (s *Server) AdminListAIChatLogs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonErr(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	q := r.URL.Query()
+
+	limit := 50
+	if ls := strings.TrimSpace(q.Get("limit")); ls != "" {
+		if v, err := strconv.Atoi(ls); err == nil && v > 0 {
+			limit = v
+		}
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	offset := 0
+	if os := strings.TrimSpace(q.Get("offset")); os != "" {
+		if v, err := strconv.Atoi(os); err == nil && v >= 0 {
+			offset = v
+		}
+	}
+
+	var f db.AIChatLogFilters
+	if s := strings.TrimSpace(q.Get("id")); s != "" {
+		id, err := strconv.ParseInt(s, 10, 64)
+		if err != nil || id < 1 {
+			jsonErr(w, http.StatusBadRequest, "bad id")
+			return
+		}
+		f.ID = &id
+	}
+	if s := strings.TrimSpace(q.Get("from")); s != "" {
+		t, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			jsonErr(w, http.StatusBadRequest, "bad from")
+			return
+		}
+		f.From = &t
+	}
+	if s := strings.TrimSpace(q.Get("to")); s != "" {
+		t, err := time.Parse(time.RFC3339, s)
+		if err != nil {
+			jsonErr(w, http.StatusBadRequest, "bad to")
+			return
+		}
+		f.To = &t
+	}
+	if s := strings.TrimSpace(q.Get("user_id")); s != "" {
+		id, err := strconv.ParseInt(s, 10, 64)
+		if err != nil || id < 1 {
+			jsonErr(w, http.StatusBadRequest, "bad user_id")
+			return
+		}
+		f.UserID = &id
+	}
+	if s := strings.TrimSpace(q.Get("group_slug")); s != "" {
+		f.GroupSlugContains = &s
+	}
+	if s := strings.TrimSpace(q.Get("variant_slug")); s != "" {
+		f.VariantSlugContains = &s
+	}
+	if s := strings.TrimSpace(q.Get("message_contains")); s != "" {
+		f.MessageContains = &s
+	}
+	if s := strings.TrimSpace(q.Get("reply_contains")); s != "" {
+		f.ReplyContains = &s
+	}
+	if s := strings.TrimSpace(q.Get("user_message_id")); s != "" {
+		f.UserMessageID = &s
+	}
+	if s := strings.TrimSpace(q.Get("assistant_message_id")); s != "" {
+		f.AssistantMessageID = &s
+	}
+	if s := strings.TrimSpace(q.Get("client_ip")); s != "" {
+		f.ClientIPContains = &s
+	}
+	if s := strings.TrimSpace(q.Get("user_agent")); s != "" {
+		f.UserAgentContains = &s
+	}
+	if s := strings.TrimSpace(q.Get("login_contains")); s != "" {
+		f.LoginContains = &s
+	}
+	if s := strings.TrimSpace(q.Get("email_contains")); s != "" {
+		f.EmailContains = &s
+	}
+
+	rows, total, err := db.ListAIChatLogsAdmin(s.DB, f, limit, offset)
+	if err != nil {
+		jsonErr(w, http.StatusInternalServerError, "db error")
+		return
+	}
+
+	items := make([]map[string]any, 0, len(rows))
+	for i := range rows {
+		row := rows[i]
+		m := map[string]any{
+			"id":                   row.ID,
+			"created_at":           row.CreatedAt.UTC().Format(time.RFC3339),
+			"message":              row.Message,
+			"group_slug":           row.GroupSlug,
+			"variant_slug":         row.VariantSlug,
+			"reply":                row.Reply,
+			"user_message_id":      row.UserMessageID,
+			"assistant_message_id": row.AssistantMessageID,
+		}
+		if row.UserID.Valid {
+			m["user_id"] = row.UserID.Int64
+		} else {
+			m["user_id"] = nil
+		}
+		if row.ClientIP.Valid {
+			m["client_ip"] = row.ClientIP.String
+		} else {
+			m["client_ip"] = nil
+		}
+		if row.UserAgent.Valid {
+			m["user_agent"] = row.UserAgent.String
+		} else {
+			m["user_agent"] = nil
+		}
+		if row.UserLogin.Valid && row.UserEmail.Valid {
+			m["user"] = map[string]any{
+				"id":    row.UserID.Int64,
+				"login": row.UserLogin.String,
+				"email": row.UserEmail.String,
+			}
+		} else {
+			m["user"] = nil
+		}
+		items = append(items, m)
+	}
+	jsonOK(w, map[string]any{"items": items, "total": total})
 }
 
 func (s *Server) AdminListAIGroups(w http.ResponseWriter, r *http.Request) {

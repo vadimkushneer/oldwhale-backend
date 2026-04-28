@@ -67,6 +67,9 @@ CREATE TABLE IF NOT EXISTS users (
 	if err := d.migrateAICatalog(); err != nil {
 		return err
 	}
+	if err := d.migrateAIChatLogs(); err != nil {
+		return err
+	}
 	return nil
 }
 

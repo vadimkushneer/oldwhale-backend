@@ -212,7 +212,7 @@ paths:
       summary: Chat stub (fixed reply)
       description: |
         Public endpoint. Sends user message and selected catalog slugs; currently returns a constant reply (no LLM).
-        Optional `Authorization: Bearer` is ignored for this stub.
+        Optional `Authorization: Bearer` (valid JWT) associates the request with a user for server-side audit logging.
       operationId: postAiChat
       requestBody:
         required: true
@@ -239,6 +239,80 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+
+  /api/admin/ai/chat-logs:
+    get:
+      tags: [AiModels]
+      summary: List AI chat audit logs (admin)
+      description: |
+        Paginated list of stored `/api/ai/chat` exchanges. Query params filter by column (AND-combined substring filters use `ILIKE`).
+        Dates must be RFC3339 (`from`, `to`).
+      operationId: getAdminAIChatLogs
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: id
+          in: query
+          schema: { type: integer, format: int64 }
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+          description: Inclusive lower bound (RFC3339).
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+          description: Inclusive upper bound (RFC3339).
+        - name: user_id
+          in: query
+          schema: { type: integer, format: int64 }
+        - name: group_slug
+          in: query
+          schema: { type: string }
+        - name: variant_slug
+          in: query
+          schema: { type: string }
+        - name: message_contains
+          in: query
+          schema: { type: string }
+        - name: reply_contains
+          in: query
+          schema: { type: string }
+        - name: user_message_id
+          in: query
+          schema: { type: string }
+        - name: assistant_message_id
+          in: query
+          schema: { type: string }
+        - name: client_ip
+          in: query
+          schema: { type: string }
+        - name: user_agent
+          in: query
+          schema: { type: string }
+        - name: login_contains
+          in: query
+          schema: { type: string }
+        - name: email_contains
+          in: query
+          schema: { type: string }
+      responses:
+        "200":
+          description: Paginated chat logs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiChatLogListResponse"
+        "400": { description: Bad filter value, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Forbidden, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "405": { description: Method not allowed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "500": { description: Database error, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
 
   /api/admin/ai/groups:
     get:
@@ -845,6 +919,55 @@ components:
           type: string
           format: uuid
           description: Server-issued id for the assistant reply (UUID v4).
+
+    AiChatLogUser:
+      type: object
+      description: User row from join when the log has a `user_id`.
+      required: [id, login, email]
+      properties:
+        id: { type: integer, format: int64 }
+        login: { type: string }
+        email: { type: string }
+
+    AiChatLogItem:
+      type: object
+      required:
+        - id
+        - created_at
+        - message
+        - group_slug
+        - variant_slug
+        - reply
+        - user_message_id
+        - assistant_message_id
+      properties:
+        id: { type: integer, format: int64 }
+        created_at: { type: string, format: date-time }
+        user_id: { type: integer, format: int64, nullable: true }
+        message: { type: string }
+        group_slug: { type: string }
+        variant_slug: { type: string }
+        reply: { type: string }
+        user_message_id: { type: string }
+        assistant_message_id: { type: string }
+        client_ip: { type: string, nullable: true }
+        user_agent: { type: string, nullable: true }
+        user:
+          oneOf:
+            - $ref: "#/components/schemas/AiChatLogUser"
+            - type: "null"
+
+    AiChatLogListResponse:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiChatLogItem"
+        total:
+          type: integer
+          minimum: 0
 
     AiVariantAdmin:
       type: object
