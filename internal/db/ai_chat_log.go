@@ -2,6 +2,7 @@ package db
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -22,6 +23,8 @@ type AIChatLogRow struct {
 	UserAgent          sql.NullString
 	UserLogin          sql.NullString
 	UserEmail          sql.NullString
+	EditorMode  sql.NullString
+	NoteContext []byte
 }
 
 // AIChatLogFilters are optional AND-combined filters for admin listing.
@@ -40,6 +43,7 @@ type AIChatLogFilters struct {
 	UserAgentContains   *string
 	LoginContains       *string
 	EmailContains       *string
+	EditorModeExact     *string
 }
 
 func (d *Database) migrateAIChatLogs() error {
@@ -61,6 +65,9 @@ func (d *Database) migrateAIChatLogs() error {
 		`CREATE INDEX IF NOT EXISTS idx_ai_chat_logs_user ON ai_chat_logs(user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_ai_chat_logs_group ON ai_chat_logs(group_slug)`,
 		`CREATE INDEX IF NOT EXISTS idx_ai_chat_logs_variant ON ai_chat_logs(variant_slug)`,
+		`ALTER TABLE ai_chat_logs ADD COLUMN IF NOT EXISTS editor_mode TEXT`,
+		`ALTER TABLE ai_chat_logs ADD COLUMN IF NOT EXISTS note_context JSONB`,
+		`CREATE INDEX IF NOT EXISTS idx_ai_chat_logs_editor_mode ON ai_chat_logs(editor_mode)`,
 	}
 	for _, s := range stmts {
 		if _, err := d.Exec(s); err != nil {
@@ -70,8 +77,8 @@ func (d *Database) migrateAIChatLogs() error {
 	return nil
 }
 
-// InsertAIChatLog stores one completed chat exchange.
-func InsertAIChatLog(d *Database, userID *int64, message, groupSlug, variantSlug, reply, userMsgID, asstMsgID string, clientIP, userAgent *string) error {
+// InsertAIChatLog stores one completed chat exchange. noteContextJSON must be valid JSON or nil.
+func InsertAIChatLog(d *Database, userID *int64, message, groupSlug, variantSlug, reply, userMsgID, asstMsgID string, clientIP, userAgent *string, editorMode string, noteContextJSON []byte) error {
 	var uid sql.NullInt64
 	if userID != nil {
 		uid = sql.NullInt64{Int64: *userID, Valid: true}
@@ -83,10 +90,21 @@ func InsertAIChatLog(d *Database, userID *int64, message, groupSlug, variantSlug
 	if userAgent != nil && *userAgent != "" {
 		ua = sql.NullString{String: *userAgent, Valid: true}
 	}
+	em := strings.TrimSpace(editorMode)
+	if em == "" {
+		em = "film"
+	}
+	var note any
+	if len(noteContextJSON) > 0 {
+		if !json.Valid(noteContextJSON) {
+			noteContextJSON = []byte(`{}`)
+		}
+		note = noteContextJSON
+	}
 	_, err := d.Exec(
-		`INSERT INTO ai_chat_logs (user_id, message, group_slug, variant_slug, reply, user_message_id, assistant_message_id, client_ip, user_agent)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-		uid, message, groupSlug, variantSlug, reply, userMsgID, asstMsgID, ip, ua,
+		`INSERT INTO ai_chat_logs (user_id, message, group_slug, variant_slug, reply, user_message_id, assistant_message_id, client_ip, user_agent, editor_mode, note_context)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
+		uid, message, groupSlug, variantSlug, reply, userMsgID, asstMsgID, ip, ua, em, note,
 	)
 	return err
 }
@@ -145,6 +163,9 @@ func ListAIChatLogsAdmin(d *Database, f AIChatLogFilters, limit, offset int) ([]
 	if f.EmailContains != nil && *f.EmailContains != "" {
 		add(fmt.Sprintf("u.email ILIKE $%d", n), "%"+*f.EmailContains+"%")
 	}
+	if f.EditorModeExact != nil && *f.EditorModeExact != "" {
+		add(fmt.Sprintf("l.editor_mode = $%d", n), *f.EditorModeExact)
+	}
 
 	whereSQL := strings.Join(where, " AND ")
 	countQuery := `SELECT COUNT(*) FROM ai_chat_logs l LEFT JOIN users u ON u.id = l.user_id WHERE ` + whereSQL
@@ -161,7 +182,8 @@ func ListAIChatLogsAdmin(d *Database, f AIChatLogFilters, limit, offset int) ([]
 
 	listQuery := `
 SELECT l.id, l.created_at, l.user_id, l.message, l.group_slug, l.variant_slug, l.reply,
-	l.user_message_id, l.assistant_message_id, l.client_ip, l.user_agent, u.login, u.email
+	l.user_message_id, l.assistant_message_id, l.client_ip, l.user_agent, u.login, u.email,
+	l.editor_mode, l.note_context
 FROM ai_chat_logs l
 LEFT JOIN users u ON u.id = l.user_id
 WHERE ` + whereSQL + `
@@ -180,6 +202,7 @@ LIMIT $` + fmt.Sprint(limitPos) + ` OFFSET $` + fmt.Sprint(offsetPos)
 		if err := rows.Scan(
 			&r.ID, &r.CreatedAt, &r.UserID, &r.Message, &r.GroupSlug, &r.VariantSlug, &r.Reply,
 			&r.UserMessageID, &r.AssistantMessageID, &r.ClientIP, &r.UserAgent, &r.UserLogin, &r.UserEmail,
+			&r.EditorMode, &r.NoteContext,
 		); err != nil {
 			return nil, 0, err
 		}

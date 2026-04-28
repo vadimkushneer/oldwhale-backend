@@ -52,6 +52,8 @@ Use the **[Dockerfile](Dockerfile)** on App Platform (or another registry) so pr
 | POST | `/api/admin/users` | Bearer admin | Create user (`login`, `email`, `password`, `role`) |
 | PATCH | `/api/admin/users/{id}` | Bearer admin | `disabled`, `role` |
 | DELETE | `/api/admin/users/{id}` | Bearer admin | Delete user (not self) |
+| GET | `/api/admin/me/ui-settings` | Bearer admin | Admin UI prefs (e.g. AI chat log column visibility) |
+| PUT | `/api/admin/me/ui-settings` | Bearer admin | Merge `aiChatLogTable.columns` |
 
 ## As a separate Git repository
 

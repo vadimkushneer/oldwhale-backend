@@ -301,6 +301,12 @@ paths:
         - name: email_contains
           in: query
           schema: { type: string }
+        - name: editor_mode
+          in: query
+          schema:
+            type: string
+            enum: [note, media, short, play, film]
+          description: Exact match on stored editor mode (omit for all).
       responses:
         "200":
           description: Paginated chat logs
@@ -309,6 +315,51 @@ paths:
               schema:
                 $ref: "#/components/schemas/AiChatLogListResponse"
         "400": { description: Bad filter value, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Forbidden, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "405": { description: Method not allowed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "500": { description: Database error, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/admin/me/ui-settings:
+    get:
+      tags: [AiModels]
+      summary: Admin UI preferences (current user)
+      description: Persisted JSON for the authenticated admin (e.g. AI chat log table column visibility).
+      operationId: getAdminMeUiSettings
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUiSettingsResponse"
+        "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Forbidden, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "405": { description: Method not allowed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "500": { description: Database error, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    put:
+      tags: [AiModels]
+      summary: Update admin UI preferences
+      description: Merges `aiChatLogTable.columns` into stored preferences.
+      operationId: putAdminMeUiSettings
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminUiSettingsPutRequest"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminUiSettingsResponse"
+        "400": { description: Invalid body, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "403": { description: Forbidden, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "405": { description: Method not allowed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
@@ -890,6 +941,31 @@ components:
           items:
             $ref: "#/components/schemas/AiGroupPublic"
 
+    AiChatConversationMessage:
+      type: object
+      required: [id, role, text]
+      properties:
+        id: { type: string }
+        role:
+          type: string
+          enum: [user, ai, sys]
+        text: { type: string }
+        model: { type: string }
+        modelVariant: { type: string }
+
+    AiChatNoteContextRequest:
+      type: object
+      description: Required when editorMode is `note`; prior thread before the outgoing `message` turn.
+      required: [conversationHistory, workfieldHtml]
+      properties:
+        conversationHistory:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiChatConversationMessage"
+        workfieldHtml:
+          type: string
+          description: HTML from the note work area (contentEditable).
+
     AiChatRequest:
       type: object
       required: [message, groupSlug, variantSlug]
@@ -903,6 +979,12 @@ components:
         variantSlug:
           type: string
           description: Selected variant slug within that group.
+        editorMode:
+          type: string
+          enum: [note, media, short, play, film]
+          description: Active editor surface when the message was sent; server defaults to `film` if omitted.
+        noteContext:
+          $ref: "#/components/schemas/AiChatNoteContextRequest"
 
     AiChatResponse:
       type: object
@@ -956,6 +1038,63 @@ components:
           oneOf:
             - $ref: "#/components/schemas/AiChatLogUser"
             - type: "null"
+        editor_mode:
+          type: string
+          nullable: true
+          description: Stored editor mode; null for legacy rows.
+        note_context:
+          description: JSON snapshot for note mode requests; null if not applicable.
+          nullable: true
+          type: object
+          additionalProperties: true
+
+    AiChatLogColumnKey:
+      type: string
+      enum:
+        - id
+        - time
+        - user
+        - message
+        - reply
+        - model
+        - message_ids
+        - ip_ua
+        - editor_mode
+        - note_context
+
+    AiChatLogTableSettings:
+      type: object
+      description: Column visibility for the admin AI chat log table.
+      required: [columns]
+      properties:
+        columns:
+          type: object
+          additionalProperties:
+            type: boolean
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    AdminUiSettingsResponse:
+      type: object
+      required: [aiChatLogTable]
+      properties:
+        aiChatLogTable:
+          $ref: "#/components/schemas/AiChatLogTableSettings"
+
+    AdminUiSettingsPutRequest:
+      type: object
+      required: [aiChatLogTable]
+      properties:
+        aiChatLogTable:
+          type: object
+          required: [columns]
+          properties:
+            columns:
+              type: object
+              additionalProperties:
+                type: boolean
 
     AiChatLogListResponse:
       type: object

@@ -55,12 +55,28 @@ func main() {
 			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminListAIChatLogs))),
 		),
 	)
+	mux.Handle(
+		"GET /api/admin/me/ui-settings",
+		api.BearerUser(secret)(
+			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminMeUISettingsGet))),
+		),
+	)
+	mux.Handle(
+		"PUT /api/admin/me/ui-settings",
+		api.BearerUser(secret)(
+			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminMeUISettingsPut))),
+		),
+	)
 
 	// Protected /api/* routes (JWT optional via BearerUser).
 	apiProtected := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/ai/chat":
 			srv.AIChat(w, r)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/admin/me/ui-settings":
+			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminMeUISettingsGet))).ServeHTTP(w, r)
+		case r.Method == http.MethodPut && r.URL.Path == "/api/admin/me/ui-settings":
+			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminMeUISettingsPut))).ServeHTTP(w, r)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/me":
 			api.RequireAuth(http.HandlerFunc(srv.Me)).ServeHTTP(w, r)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/admin/ai/groups":

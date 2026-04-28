@@ -17,6 +17,9 @@ import (
 	"github.com/oldwhale/backend/internal/db"
 )
 
+const maxAiChatBodyBytes = 1 << 20
+const maxNoteContextBytes = 512 * 1024
+
 func isUniqueViolation(err error) bool {
 	var pe *pgconn.PgError
 	if errors.As(err, &pe) && pe.Code == "23505" {
@@ -63,9 +66,50 @@ func (s *Server) PublicAIModels(w http.ResponseWriter, r *http.Request) {
 }
 
 type aiChatReq struct {
-	Message     string `json:"message"`
-	GroupSlug   string `json:"groupSlug"`
-	VariantSlug string `json:"variantSlug"`
+	Message     string          `json:"message"`
+	GroupSlug   string          `json:"groupSlug"`
+	VariantSlug string          `json:"variantSlug"`
+	EditorMode  string          `json:"editorMode"`
+	NoteContext json.RawMessage `json:"noteContext"`
+}
+
+type aiChatConvMsg struct {
+	ID            string `json:"id"`
+	Role          string `json:"role"`
+	Text          string `json:"text"`
+	Model         string `json:"model"`
+	ModelVariant  string `json:"modelVariant"`
+}
+
+type aiChatNoteCtx struct {
+	ConversationHistory []aiChatConvMsg `json:"conversationHistory"`
+	WorkfieldHtml       string          `json:"workfieldHtml"`
+}
+
+func normalizeEditorMode(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "" {
+		return "film"
+	}
+	return s
+}
+
+func validEditorMode(s string) bool {
+	switch s {
+	case "note", "media", "short", "play", "film":
+		return true
+	default:
+		return false
+	}
+}
+
+func validAiChatRole(role string) bool {
+	switch role {
+	case "user", "ai", "sys":
+		return true
+	default:
+		return false
+	}
 }
 
 func randomUUIDv4() string {
@@ -102,6 +146,7 @@ func (s *Server) AIChat(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxAiChatBodyBytes)
 	var in aiChatReq
 	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 		jsonErr(w, http.StatusBadRequest, "invalid json")
@@ -114,6 +159,45 @@ func (s *Server) AIChat(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusBadRequest, "message, groupSlug, and variantSlug required")
 		return
 	}
+	em := normalizeEditorMode(in.EditorMode)
+	if !validEditorMode(em) {
+		jsonErr(w, http.StatusBadRequest, "invalid editorMode")
+		return
+	}
+	var noteBytes []byte
+	if em == "note" {
+		if len(in.NoteContext) == 0 {
+			jsonErr(w, http.StatusBadRequest, "noteContext required for note mode")
+			return
+		}
+		if len(in.NoteContext) > maxNoteContextBytes {
+			jsonErr(w, http.StatusRequestEntityTooLarge, "noteContext too large")
+			return
+		}
+		var nc aiChatNoteCtx
+		if err := json.Unmarshal(in.NoteContext, &nc); err != nil {
+			jsonErr(w, http.StatusBadRequest, "invalid noteContext")
+			return
+		}
+		if nc.ConversationHistory == nil {
+			jsonErr(w, http.StatusBadRequest, "noteContext.conversationHistory required")
+			return
+		}
+		for i := range nc.ConversationHistory {
+			m := nc.ConversationHistory[i]
+			if strings.TrimSpace(m.ID) == "" || !validAiChatRole(strings.TrimSpace(m.Role)) {
+				jsonErr(w, http.StatusBadRequest, "invalid conversationHistory item")
+				return
+			}
+		}
+		var err error
+		noteBytes, err = json.Marshal(nc)
+		if err != nil {
+			jsonErr(w, http.StatusBadRequest, "invalid noteContext")
+			return
+		}
+	}
+
 	reply := "HELLO FROM OLD WHALE"
 	userMessageID := randomUUIDv4()
 	assistantMessageID := randomUUIDv4()
@@ -131,7 +215,7 @@ func (s *Server) AIChat(w http.ResponseWriter, r *http.Request) {
 	if uaStr != "" {
 		uaPtr = &uaStr
 	}
-	if err := db.InsertAIChatLog(s.DB, uid, in.Message, in.GroupSlug, in.VariantSlug, reply, userMessageID, assistantMessageID, ipPtr, uaPtr); err != nil {
+	if err := db.InsertAIChatLog(s.DB, uid, in.Message, in.GroupSlug, in.VariantSlug, reply, userMessageID, assistantMessageID, ipPtr, uaPtr, em, noteBytes); err != nil {
 		log.Printf("ai chat log insert: %v", err)
 	}
 
@@ -228,6 +312,14 @@ func (s *Server) AdminListAIChatLogs(w http.ResponseWriter, r *http.Request) {
 	if s := strings.TrimSpace(q.Get("email_contains")); s != "" {
 		f.EmailContains = &s
 	}
+	if s := strings.TrimSpace(q.Get("editor_mode")); s != "" {
+		if !validEditorMode(strings.ToLower(s)) {
+			jsonErr(w, http.StatusBadRequest, "bad editor_mode")
+			return
+		}
+		sl := strings.ToLower(s)
+		f.EditorModeExact = &sl
+	}
 
 	rows, total, err := db.ListAIChatLogsAdmin(s.DB, f, limit, offset)
 	if err != nil {
@@ -271,6 +363,21 @@ func (s *Server) AdminListAIChatLogs(w http.ResponseWriter, r *http.Request) {
 			}
 		} else {
 			m["user"] = nil
+		}
+		if row.EditorMode.Valid {
+			m["editor_mode"] = row.EditorMode.String
+		} else {
+			m["editor_mode"] = nil
+		}
+		if len(row.NoteContext) > 0 {
+			var parsed any
+			if err := json.Unmarshal(row.NoteContext, &parsed); err != nil {
+				m["note_context"] = nil
+			} else {
+				m["note_context"] = parsed
+			}
+		} else {
+			m["note_context"] = nil
 		}
 		items = append(items, m)
 	}

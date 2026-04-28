@@ -43,6 +43,10 @@
     {
       "name": "AiModels",
       "description": "AI provider groups and model variants"
+    },
+    {
+      "name": "AiModels",
+      "description": "AI provider groups and model variants"
     }
   ],
   "paths": {
@@ -1605,6 +1609,21 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "editor_mode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "note",
+                "media",
+                "short",
+                "play",
+                "film"
+              ]
+            },
+            "description": "Exact match on stored editor mode"
           }
         ],
         "responses": {
@@ -1614,6 +1633,156 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AiChatLogListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/me/ui-settings": {
+      "get": {
+        "tags": [
+          "AiModels"
+        ],
+        "summary": "Admin UI preferences",
+        "operationId": "getAdminMeUiSettings",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUiSettingsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "AiModels"
+        ],
+        "summary": "Update admin UI preferences",
+        "operationId": "putAdminMeUiSettings",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUiSettingsPutRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUiSettingsResponse"
                 }
               }
             }
@@ -2224,6 +2393,20 @@
           },
           "variantSlug": {
             "type": "string"
+          },
+          "editorMode": {
+            "type": "string",
+            "enum": [
+              "note",
+              "media",
+              "short",
+              "play",
+              "film"
+            ],
+            "description": "Defaults to film if omitted"
+          },
+          "noteContext": {
+            "$ref": "#/components/schemas/AiChatNoteContextRequest"
           }
         }
       },
@@ -2329,6 +2512,15 @@
                 "type": "null"
               }
             ]
+          },
+          "editor_mode": {
+            "type": "string",
+            "nullable": true
+          },
+          "note_context": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": true
           }
         }
       },
@@ -2348,6 +2540,121 @@
           "total": {
             "type": "integer",
             "minimum": 0
+          }
+        }
+      },
+      "AiChatConversationMessage": {
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "text"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "user",
+              "ai",
+              "sys"
+            ]
+          },
+          "text": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "modelVariant": {
+            "type": "string"
+          }
+        }
+      },
+      "AiChatNoteContextRequest": {
+        "type": "object",
+        "required": [
+          "conversationHistory",
+          "workfieldHtml"
+        ],
+        "properties": {
+          "conversationHistory": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiChatConversationMessage"
+            }
+          },
+          "workfieldHtml": {
+            "type": "string"
+          }
+        }
+      },
+      "AiChatLogColumnKey": {
+        "type": "string",
+        "enum": [
+          "id",
+          "time",
+          "user",
+          "message",
+          "reply",
+          "model",
+          "message_ids",
+          "ip_ua",
+          "editor_mode",
+          "note_context"
+        ]
+      },
+      "AiChatLogTableSettings": {
+        "type": "object",
+        "required": [
+          "columns"
+        ],
+        "properties": {
+          "columns": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
+            }
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        }
+      },
+      "AdminUiSettingsResponse": {
+        "type": "object",
+        "required": [
+          "aiChatLogTable"
+        ],
+        "properties": {
+          "aiChatLogTable": {
+            "$ref": "#/components/schemas/AiChatLogTableSettings"
+          }
+        }
+      },
+      "AdminUiSettingsPutRequest": {
+        "type": "object",
+        "required": [
+          "aiChatLogTable"
+        ],
+        "properties": {
+          "aiChatLogTable": {
+            "type": "object",
+            "required": [
+              "columns"
+            ],
+            "properties": {
+              "columns": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "boolean"
+                }
+              }
+            }
           }
         }
       }
