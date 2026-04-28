@@ -1,7 +1,9 @@
 package api
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -63,6 +65,17 @@ type aiChatReq struct {
 	VariantSlug string `json:"variantSlug"`
 }
 
+func randomUUIDv4() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "00000000-0000-4000-8000-000000000000"
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	h := hex.EncodeToString(b)
+	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32]
+}
+
 // AIChat is a public stub: validates JSON and returns a fixed reply (no upstream LLM call).
 func (s *Server) AIChat(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -81,7 +94,11 @@ func (s *Server) AIChat(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusBadRequest, "message, groupSlug, and variantSlug required")
 		return
 	}
-	jsonOK(w, map[string]string{"reply": "HELLO FROM OLD WHALE"})
+	jsonOK(w, map[string]any{
+		"reply":               "HELLO FROM OLD WHALE",
+		"userMessageId":       randomUUIDv4(),
+		"assistantMessageId":  randomUUIDv4(),
+	})
 }
 
 func (s *Server) AdminListAIGroups(w http.ResponseWriter, r *http.Request) {

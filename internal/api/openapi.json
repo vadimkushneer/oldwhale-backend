@@ -35,6 +35,10 @@
     {
       "name": "AiModels",
       "description": "AI provider groups and model variants"
+    },
+    {
+      "name": "AiModels",
+      "description": "AI provider groups and model variants"
     }
   ],
   "paths": {
@@ -2022,11 +2026,21 @@
       "AiChatResponse": {
         "type": "object",
         "required": [
-          "reply"
+          "reply",
+          "userMessageId",
+          "assistantMessageId"
         ],
         "properties": {
           "reply": {
             "type": "string"
+          },
+          "userMessageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "assistantMessageId": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       }

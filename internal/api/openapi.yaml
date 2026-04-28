@@ -832,11 +832,19 @@ components:
 
     AiChatResponse:
       type: object
-      required: [reply]
+      required: [reply, userMessageId, assistantMessageId]
       properties:
         reply:
           type: string
           description: Assistant message text.
+        userMessageId:
+          type: string
+          format: uuid
+          description: Server-issued id for the user turn (UUID v4).
+        assistantMessageId:
+          type: string
+          format: uuid
+          description: Server-issued id for the assistant reply (UUID v4).
 
     AiVariantAdmin:
       type: object
