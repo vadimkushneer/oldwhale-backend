@@ -79,6 +79,8 @@ func main() {
 			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminMeUISettingsPut))).ServeHTTP(w, r)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/me":
 			api.RequireAuth(http.HandlerFunc(srv.Me)).ServeHTTP(w, r)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/admin/ai/env-lookup":
+			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminEnvLookup))).ServeHTTP(w, r)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/admin/ai/groups":
 			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminListAIGroups))).ServeHTTP(w, r)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/admin/ai/groups":

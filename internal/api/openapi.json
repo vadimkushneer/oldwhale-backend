@@ -665,6 +665,65 @@
         }
       }
     },
+    "/api/admin/ai/env-lookup": {
+      "post": {
+        "tags": ["AiModels"],
+        "summary": "Look up process environment variable (admin diagnostic)",
+        "description": "Returns whether the given name is set in the API process environment and its value if set. Requires admin JWT.",
+        "operationId": "postAdminAiEnvLookup",
+        "security": [{"BearerAuth": []}],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {"$ref": "#/components/schemas/AdminEnvLookupRequest"}
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Lookup result",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/AdminEnvLookupResponse"}
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/Error"}
+              }
+            }
+          },
+          "401": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/Error"}
+              }
+            }
+          },
+          "403": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/Error"}
+              }
+            }
+          },
+          "405": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {"$ref": "#/components/schemas/Error"}
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/admin/ai/groups": {
       "get": {
         "tags": [
@@ -2288,6 +2347,24 @@
               "format": "int64"
             }
           }
+        }
+      },
+      "AdminEnvLookupRequest": {
+        "type": "object",
+        "required": ["name"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Environment variable name (letters, digits, underscore; max 256)"
+          }
+        }
+      },
+      "AdminEnvLookupResponse": {
+        "type": "object",
+        "required": ["found"],
+        "properties": {
+          "found": {"type": "boolean"},
+          "value": {"type": "string", "description": "Present when found is true"}
         }
       },
       "AiGroupCreateRequest": {

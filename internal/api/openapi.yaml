@@ -365,6 +365,34 @@ paths:
         "405": { description: Method not allowed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "500": { description: Database error, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
 
+  /api/admin/ai/env-lookup:
+    post:
+      tags: [AiModels]
+      summary: Look up process environment variable (admin diagnostic)
+      description: |
+        Returns whether the given name is set in the API process environment and its value if set.
+        Requires admin JWT. Intended for local/diagnostic use only.
+      operationId: postAdminAiEnvLookup
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdminEnvLookupRequest"
+      responses:
+        "200":
+          description: Lookup result (`found` false when unset)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminEnvLookupResponse"
+        "400": { description: Invalid name, JSON, or value too large, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Forbidden, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "405": { description: Method not allowed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
   /api/admin/ai/groups:
     get:
       tags: [AiModels]
@@ -1184,6 +1212,21 @@ components:
         ids:
           type: array
           items: { type: integer, format: int64 }
+
+    AdminEnvLookupRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: Environment variable name (letters, digits, underscore; max 256).
+
+    AdminEnvLookupResponse:
+      type: object
+      required: [found]
+      properties:
+        found: { type: boolean }
+        value: { type: string, description: Present when found is true }
 
     AiGroupCreateRequest:
       type: object

@@ -9,6 +9,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +21,11 @@ import (
 
 const maxAiChatBodyBytes = 1 << 20
 const maxNoteContextBytes = 512 * 1024
+
+const maxAdminEnvLookupNameLen = 256
+const maxAdminEnvLookupValueLen = 8192
+
+var adminEnvVarNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func isUniqueViolation(err error) bool {
 	var pe *pgconn.PgError
@@ -425,6 +432,37 @@ func (s *Server) AdminListAIGroups(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	jsonOK(w, map[string]any{"groups": out})
+}
+
+type adminEnvLookupReq struct {
+	Name string `json:"name"`
+}
+
+func (s *Server) AdminEnvLookup(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonErr(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	var in adminEnvLookupReq
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		jsonErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	name := strings.TrimSpace(in.Name)
+	if name == "" || len(name) > maxAdminEnvLookupNameLen || !adminEnvVarNameRe.MatchString(name) {
+		jsonErr(w, http.StatusBadRequest, "invalid environment variable name")
+		return
+	}
+	val, ok := os.LookupEnv(name)
+	if !ok {
+		jsonOK(w, map[string]any{"found": false})
+		return
+	}
+	if len(val) > maxAdminEnvLookupValueLen {
+		jsonErr(w, http.StatusBadRequest, "environment variable value too large")
+		return
+	}
+	jsonOK(w, map[string]any{"found": true, "value": val})
 }
 
 type aiCreateGroupReq struct {

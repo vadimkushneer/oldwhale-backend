@@ -32,6 +32,8 @@ services:
       JWT_SECRET: local-dev-change-me-to-32-chars-min!!
       CORS_ORIGIN: http://localhost:5173
       PORT: "8080"
+      # Set on host: export ANTHROPIC_API_KEY=...  (never commit real keys)
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
     depends_on:
       db:
         condition: service_healthy
