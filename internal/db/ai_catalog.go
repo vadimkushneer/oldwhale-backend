@@ -23,13 +23,13 @@ type AIModelGroup struct {
 
 // AIModelVariant is a concrete model under a group (was `AI_MODEL_VARIANTS[group]`).
 type AIModelVariant struct {
-	ID         int64     `json:"id"`
-	GroupID    int64     `json:"group_id"`
-	Slug       string    `json:"slug"`
-	Label      string    `json:"label"`
-	IsDefault  bool      `json:"is_default"`
-	Position   int       `json:"position"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID        int64     `json:"id"`
+	GroupID   int64     `json:"group_id"`
+	Slug      string    `json:"slug"`
+	Label     string    `json:"label"`
+	IsDefault bool      `json:"is_default"`
+	Position  int       `json:"position"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 func (d *Database) migrateAICatalog() error {
@@ -400,6 +400,91 @@ func CreateAIVariant(d *Database, groupID int64, slug, label string, isDefault b
 		return nil, err
 	}
 	return GetAIVariantByID(d, id)
+}
+
+// AIImportedVariant is a provider model normalized for storage under an AI group.
+type AIImportedVariant struct {
+	Slug  string
+	Label string
+}
+
+// ListAIVariantsByGroup returns variants for one group ordered for admin display.
+func ListAIVariantsByGroup(d *Database, groupID int64) ([]AIModelVariant, error) {
+	rows, err := d.Query(
+		`SELECT id,group_id,slug,label,is_default,position,created_at
+FROM ai_model_variants
+WHERE group_id=$1
+ORDER BY position,id`,
+		groupID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AIModelVariant
+	for rows.Next() {
+		v, err := scanAIVariantRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *v)
+	}
+	return out, rows.Err()
+}
+
+// UpsertAIVariants imports provider models without deleting existing curated variants.
+func UpsertAIVariants(d *Database, groupID int64, variants []AIImportedVariant) ([]AIModelVariant, error) {
+	if _, err := GetAIGroupByID(d, groupID); err != nil {
+		return nil, err
+	}
+	tx, err := d.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var defaultCount int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM ai_model_variants WHERE group_id=$1 AND is_default=1`, groupID).Scan(&defaultCount); err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	for i, v := range variants {
+		slug, err := ValidateAIModelSlug(v.Slug)
+		if err != nil {
+			return nil, err
+		}
+		label := strings.TrimSpace(v.Label)
+		def := 0
+		if defaultCount == 0 && i == 0 {
+			def = 1
+		}
+		if _, err := tx.Exec(
+			`INSERT INTO ai_model_variants(group_id,slug,label,is_default,position,created_at)
+VALUES ($1,$2,$3,$4,$5,$6)
+ON CONFLICT (group_id,slug) DO UPDATE SET label=EXCLUDED.label, position=EXCLUDED.position`,
+			groupID,
+			slug,
+			label,
+			def,
+			i,
+			now,
+		); err != nil {
+			return nil, err
+		}
+	}
+	if defaultCount == 0 && len(variants) > 0 {
+		firstSlug, err := ValidateAIModelSlug(variants[0].Slug)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := tx.Exec(`UPDATE ai_model_variants SET is_default=1 WHERE group_id=$1 AND slug=$2`, groupID, firstSlug); err != nil {
+			return nil, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return ListAIVariantsByGroup(d, groupID)
 }
 
 // GetAIVariantByID returns variant + group_id.

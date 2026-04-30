@@ -6,9 +6,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -24,8 +27,38 @@ const maxNoteContextBytes = 512 * 1024
 
 const maxAdminEnvLookupNameLen = 256
 const maxAdminEnvLookupValueLen = 8192
+const maxAdminModelsURLLen = 2048
+const maxAdminModelsResponseBytes = 4 << 20
 
 var adminEnvVarNameRe = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+type aiModelProviderAuthScheme string
+
+const (
+	aiModelProviderAuthAnthropic aiModelProviderAuthScheme = "anthropic"
+	aiModelProviderAuthBearer    aiModelProviderAuthScheme = "bearer"
+	aiModelProviderAuthGoogle    aiModelProviderAuthScheme = "google-api-key"
+)
+
+type aiModelProvider struct {
+	ID         string
+	Label      string
+	ModelsURL  string
+	AuthScheme aiModelProviderAuthScheme
+}
+
+var adminAIModelProviders = []aiModelProvider{
+	{ID: "openai", Label: "OpenAI", ModelsURL: "https://api.openai.com/v1/models", AuthScheme: aiModelProviderAuthBearer},
+	{ID: "anthropic", Label: "Anthropic Claude", ModelsURL: "https://api.anthropic.com/v1/models", AuthScheme: aiModelProviderAuthAnthropic},
+	{ID: "google-gemini", Label: "Google Gemini", ModelsURL: "https://generativelanguage.googleapis.com/v1beta/models", AuthScheme: aiModelProviderAuthGoogle},
+	{ID: "mistral", Label: "Mistral", ModelsURL: "https://api.mistral.ai/v1/models", AuthScheme: aiModelProviderAuthBearer},
+	{ID: "cohere", Label: "Cohere", ModelsURL: "https://api.cohere.com/v1/models", AuthScheme: aiModelProviderAuthBearer},
+	{ID: "together-ai", Label: "Together AI", ModelsURL: "https://api.together.xyz/v1/models", AuthScheme: aiModelProviderAuthBearer},
+	{ID: "groq", Label: "Groq", ModelsURL: "https://api.groq.com/openai/v1/models", AuthScheme: aiModelProviderAuthBearer},
+	{ID: "fireworks", Label: "Fireworks", ModelsURL: "https://api.fireworks.ai/inference/v1/models", AuthScheme: aiModelProviderAuthBearer},
+	{ID: "perplexity", Label: "Perplexity", ModelsURL: "https://api.perplexity.ai/models", AuthScheme: aiModelProviderAuthBearer},
+	{ID: "deepseek", Label: "DeepSeek", ModelsURL: "https://api.deepseek.com/models", AuthScheme: aiModelProviderAuthBearer},
+}
 
 func isUniqueViolation(err error) bool {
 	var pe *pgconn.PgError
@@ -60,13 +93,13 @@ func (s *Server) PublicAIModels(w http.ResponseWriter, r *http.Request) {
 			})
 		}
 		out = append(out, map[string]any{
-			"id":        g.ID,
-			"slug":      g.Slug,
-			"label":     g.Label,
-			"role":      g.Role,
-			"color":     g.Color,
-			"free":      g.Free,
-			"variants":  vout,
+			"id":       g.ID,
+			"slug":     g.Slug,
+			"label":    g.Label,
+			"role":     g.Role,
+			"color":    g.Color,
+			"free":     g.Free,
+			"variants": vout,
 		})
 	}
 	jsonOK(w, map[string]any{"groups": out})
@@ -81,11 +114,11 @@ type aiChatReq struct {
 }
 
 type aiChatConvMsg struct {
-	ID            string `json:"id"`
-	Role          string `json:"role"`
-	Text          string `json:"text"`
-	Model         string `json:"model"`
-	ModelVariant  string `json:"modelVariant"`
+	ID           string `json:"id"`
+	Role         string `json:"role"`
+	Text         string `json:"text"`
+	Model        string `json:"model"`
+	ModelVariant string `json:"modelVariant"`
 }
 
 type aiChatNoteCtx struct {
@@ -409,13 +442,13 @@ func (s *Server) AdminListAIGroups(w http.ResponseWriter, r *http.Request) {
 		for j := range vlist {
 			v := vlist[j]
 			vout = append(vout, map[string]any{
-				"id":          v.ID,
-				"group_id":    v.GroupID,
-				"slug":        v.Slug,
-				"label":       v.Label,
-				"is_default":  v.IsDefault,
-				"position":    v.Position,
-				"created_at":  v.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+				"id":         v.ID,
+				"group_id":   v.GroupID,
+				"slug":       v.Slug,
+				"label":      v.Label,
+				"is_default": v.IsDefault,
+				"position":   v.Position,
+				"created_at": v.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 			})
 		}
 		out = append(out, map[string]any{
@@ -465,6 +498,263 @@ func (s *Server) AdminEnvLookup(w http.ResponseWriter, r *http.Request) {
 	jsonOK(w, map[string]any{"found": true, "value": val})
 }
 
+func (s *Server) AdminListAIModelProviders(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonErr(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	providers := make([]map[string]any, 0, len(adminAIModelProviders))
+	for _, p := range adminAIModelProviders {
+		providers = append(providers, map[string]any{
+			"id":        p.ID,
+			"label":     p.Label,
+			"modelsUrl": p.ModelsURL,
+		})
+	}
+	jsonOK(w, map[string]any{"providers": providers})
+}
+
+type adminAIModelsImportReq struct {
+	ProviderID string `json:"providerId"`
+	ModelsURL  string `json:"modelsUrl"`
+	EnvVarName string `json:"envVarName"`
+}
+
+type upstreamAIModel struct {
+	ID          string
+	DisplayName string
+}
+
+func (s *Server) AdminImportAIModels(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		jsonErr(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	groupID, ok := parsePathIDSuffix(r.URL.Path, "/api/admin/ai/groups/", "/models/import")
+	if !ok {
+		jsonErr(w, http.StatusBadRequest, "bad group id")
+		return
+	}
+	var in adminAIModelsImportReq
+	if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+		jsonErr(w, http.StatusBadRequest, "invalid json")
+		return
+	}
+	providerID := strings.TrimSpace(in.ProviderID)
+	modelsURL, err := validateAdminModelsURL(in.ModelsURL)
+	if err != nil {
+		jsonErr(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	envVarName := strings.TrimSpace(in.EnvVarName)
+	if envVarName == "" || len(envVarName) > maxAdminEnvLookupNameLen || !adminEnvVarNameRe.MatchString(envVarName) {
+		jsonErr(w, http.StatusBadRequest, "invalid environment variable name")
+		return
+	}
+	apiKey, ok := os.LookupEnv(envVarName)
+	if !ok || strings.TrimSpace(apiKey) == "" {
+		jsonErr(w, http.StatusBadRequest, "environment variable not found")
+		return
+	}
+	provider := adminAIModelProviderByID(providerID)
+	models, err := requestProviderAIModels(r, provider, modelsURL, apiKey)
+	if err != nil {
+		jsonErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	imported := normalizeProviderModels(models)
+	if len(imported) == 0 {
+		jsonErr(w, http.StatusBadGateway, "models response did not contain model ids")
+		return
+	}
+	variants, err := db.UpsertAIVariants(s.DB, groupID, imported)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			jsonErr(w, http.StatusNotFound, "group not found")
+			return
+		}
+		jsonErr(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	g, err := db.GetAIGroupByID(s.DB, groupID)
+	if err != nil {
+		jsonErr(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	vout := make([]map[string]any, 0, len(variants))
+	for i := range variants {
+		vout = append(vout, publicAIVariant(&variants[i]))
+	}
+	jsonOK(w, map[string]any{
+		"group":     publicAIGroup(g, vout),
+		"imported":  len(imported),
+		"modelsUrl": modelsURL,
+	})
+}
+
+func adminAIModelProviderByID(id string) aiModelProvider {
+	for _, p := range adminAIModelProviders {
+		if p.ID == id {
+			return p
+		}
+	}
+	return aiModelProvider{
+		ID:         strings.TrimSpace(id),
+		Label:      "Custom",
+		AuthScheme: aiModelProviderAuthAnthropic,
+	}
+}
+
+func validateAdminModelsURL(raw string) (string, error) {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return "", fmt.Errorf("modelsUrl required")
+	}
+	if len(s) > maxAdminModelsURLLen {
+		return "", fmt.Errorf("modelsUrl too long")
+	}
+	u, err := url.ParseRequestURI(s)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return "", fmt.Errorf("modelsUrl must be a valid URL")
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return "", fmt.Errorf("modelsUrl must use http or https")
+	}
+	if u.User != nil {
+		return "", fmt.Errorf("modelsUrl must not contain credentials")
+	}
+	return u.String(), nil
+}
+
+func requestProviderAIModels(r *http.Request, provider aiModelProvider, modelsURL, apiKey string) ([]upstreamAIModel, error) {
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, modelsURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("could not build models request")
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	switch provider.AuthScheme {
+	case aiModelProviderAuthGoogle:
+		req.Header.Set("x-goog-api-key", apiKey)
+	case aiModelProviderAuthAnthropic:
+		req.Header.Set("x-api-key", apiKey)
+		req.Header.Set("anthropic-version", "2023-06-01")
+	default:
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	client := &http.Client{Timeout: 20 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("models request failed")
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxAdminModelsResponseBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("could not read models response")
+	}
+	if len(body) > maxAdminModelsResponseBytes {
+		return nil, fmt.Errorf("models response too large")
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("models endpoint returned HTTP %d", resp.StatusCode)
+	}
+	var raw any
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, fmt.Errorf("models response is not valid JSON")
+	}
+	return extractProviderModels(raw), nil
+}
+
+func extractProviderModels(raw any) []upstreamAIModel {
+	switch v := raw.(type) {
+	case []any:
+		return extractProviderModelsFromArray(v)
+	case map[string]any:
+		for _, key := range []string{"data", "models"} {
+			if arr, ok := v[key].([]any); ok {
+				return extractProviderModelsFromArray(arr)
+			}
+		}
+	}
+	return nil
+}
+
+func extractProviderModelsFromArray(items []any) []upstreamAIModel {
+	out := make([]upstreamAIModel, 0, len(items))
+	for _, item := range items {
+		m, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		id := firstStringField(m, "id", "name", "model", "slug")
+		if id == "" {
+			continue
+		}
+		label := firstStringField(m, "display_name", "displayName", "label", "name")
+		out = append(out, upstreamAIModel{ID: id, DisplayName: label})
+	}
+	return out
+}
+
+func firstStringField(m map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if v, ok := m[key].(string); ok {
+			if s := strings.TrimSpace(v); s != "" {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
+func normalizeProviderModels(models []upstreamAIModel) []db.AIImportedVariant {
+	out := make([]db.AIImportedVariant, 0, len(models))
+	seen := make(map[string]struct{}, len(models))
+	for _, m := range models {
+		slug := normalizeImportedModelSlug(m.ID)
+		if slug == "" {
+			continue
+		}
+		if _, ok := seen[slug]; ok {
+			continue
+		}
+		seen[slug] = struct{}{}
+		label := strings.TrimSpace(m.DisplayName)
+		if label == "" {
+			label = strings.TrimSpace(m.ID)
+		}
+		out = append(out, db.AIImportedVariant{Slug: slug, Label: label})
+	}
+	return out
+}
+
+func normalizeImportedModelSlug(raw string) string {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	s = strings.TrimSuffix(s, "/")
+	if i := strings.LastIndexByte(s, '/'); i >= 0 {
+		s = s[i+1:]
+	}
+	var b strings.Builder
+	lastDash := false
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+			b.WriteByte(c)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	out := strings.Trim(b.String(), "-")
+	if _, err := db.ValidateAIModelSlug(out); err != nil {
+		return ""
+	}
+	return out
+}
+
 type aiCreateGroupReq struct {
 	Slug     string  `json:"slug"`
 	Label    string  `json:"label"`
@@ -490,17 +780,17 @@ type aiReorderReq struct {
 }
 
 type aiCreateVariantReq struct {
-	Slug       string `json:"slug"`
-	Label      string `json:"label"`
-	IsDefault  *bool  `json:"is_default"`
-	Position   *int   `json:"position"`
+	Slug      string `json:"slug"`
+	Label     string `json:"label"`
+	IsDefault *bool  `json:"is_default"`
+	Position  *int   `json:"position"`
 }
 
 type aiPatchVariantReq struct {
-	Slug       *string `json:"slug"`
-	Label      *string `json:"label"`
-	IsDefault  *bool   `json:"is_default"`
-	Position   *int    `json:"position"`
+	Slug      *string `json:"slug"`
+	Label     *string `json:"label"`
+	IsDefault *bool   `json:"is_default"`
+	Position  *int    `json:"position"`
 }
 
 func (s *Server) AdminCreateAIGroup(w http.ResponseWriter, r *http.Request) {
@@ -722,13 +1012,13 @@ func (s *Server) AdminCreateAIVariant(w http.ResponseWriter, r *http.Request) {
 
 func publicAIVariant(v *db.AIModelVariant) map[string]any {
 	return map[string]any{
-		"id":          v.ID,
-		"group_id":    v.GroupID,
-		"slug":        v.Slug,
-		"label":       v.Label,
-		"is_default":  v.IsDefault,
-		"position":    v.Position,
-		"created_at":  v.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		"id":         v.ID,
+		"group_id":   v.GroupID,
+		"slug":       v.Slug,
+		"label":      v.Label,
+		"is_default": v.IsDefault,
+		"position":   v.Position,
+		"created_at": v.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
 }
 
@@ -842,6 +1132,22 @@ func parsePathID(path, prefix string) (int64, bool) {
 		part = rest[:i]
 	}
 	if part == "" {
+		return 0, false
+	}
+	id, err := strconv.ParseInt(part, 10, 64)
+	if err != nil || id < 1 {
+		return 0, false
+	}
+	return id, true
+}
+
+func parsePathIDSuffix(path, prefix, suffix string) (int64, bool) {
+	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
+		return 0, false
+	}
+	part := strings.TrimSuffix(strings.TrimPrefix(path, prefix), suffix)
+	part = strings.Trim(part, "/")
+	if part == "" || strings.Contains(part, "/") {
 		return 0, false
 	}
 	id, err := strconv.ParseInt(part, 10, 64)

@@ -81,12 +81,16 @@ func main() {
 			api.RequireAuth(http.HandlerFunc(srv.Me)).ServeHTTP(w, r)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/admin/ai/env-lookup":
 			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminEnvLookup))).ServeHTTP(w, r)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/admin/ai/model-providers":
+			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminListAIModelProviders))).ServeHTTP(w, r)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/admin/ai/groups":
 			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminListAIGroups))).ServeHTTP(w, r)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/admin/ai/groups":
 			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminCreateAIGroup))).ServeHTTP(w, r)
 		case r.Method == http.MethodPut && r.URL.Path == "/api/admin/ai/groups/order":
 			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminReorderAIGroups))).ServeHTTP(w, r)
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/admin/ai/groups/") && strings.HasSuffix(r.URL.Path, "/models/import"):
+			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminImportAIModels))).ServeHTTP(w, r)
 		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/admin/ai/groups/") && strings.HasSuffix(r.URL.Path, "/variants"):
 			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminCreateAIVariant))).ServeHTTP(w, r)
 		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/api/admin/ai/groups/") && strings.HasSuffix(r.URL.Path, "/variants/order"):

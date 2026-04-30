@@ -393,6 +393,25 @@ paths:
         "403": { description: Forbidden, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "405": { description: Method not allowed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
 
+  /api/admin/ai/model-providers:
+    get:
+      tags: [AiModels]
+      summary: List AI model provider endpoints
+      description: Returns backend-owned provider labels and default models URLs for the admin importer.
+      operationId: getAdminAIModelProviders
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Provider catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiModelProviderListResponse"
+        "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Forbidden, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "405": { description: Method not allowed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
   /api/admin/ai/groups:
     get:
       tags: [AiModels]
@@ -503,6 +522,40 @@ paths:
         "403": { description: Forbidden, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "404": { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "500": { description: Server error, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/admin/ai/groups/{groupId}/models/import:
+    parameters:
+      - name: groupId
+        in: path
+        required: true
+        schema: { type: integer, format: int64, minimum: 1 }
+    post:
+      tags: [AiModels]
+      summary: Import provider models into an AI group
+      description: Looks up the supplied API-key environment variable, requests the selected provider models URL server-side, parses returned model IDs, and upserts them as group variants.
+      operationId: postAdminAIGroupModelsImport
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiModelsImportRequest"
+      responses:
+        "200":
+          description: Updated group with imported variants
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiModelsImportResponse"
+        "400": { description: Invalid body, environment variable, or URL, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Forbidden, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: Group not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "405": { description: Method not allowed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "500": { description: Database error, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "502": { description: Provider models request failed or response could not be parsed, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
 
   /api/admin/ai/groups/{groupId}/variants:
     parameters:
@@ -1227,6 +1280,46 @@ components:
       properties:
         found: { type: boolean }
         value: { type: string, description: Present when found is true }
+
+    AiModelProvider:
+      type: object
+      required: [id, label, modelsUrl]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        modelsUrl: { type: string, format: uri }
+
+    AiModelProviderListResponse:
+      type: object
+      required: [providers]
+      properties:
+        providers:
+          type: array
+          items:
+            $ref: "#/components/schemas/AiModelProvider"
+
+    AiModelsImportRequest:
+      type: object
+      required: [providerId, modelsUrl, envVarName]
+      properties:
+        providerId: { type: string }
+        modelsUrl: { type: string, format: uri }
+        envVarName:
+          type: string
+          description: Environment variable name whose value is used as the provider API key.
+
+    AiModelsImportResponse:
+      type: object
+      required: [group, imported, modelsUrl]
+      properties:
+        group:
+          $ref: "#/components/schemas/AiGroupAdmin"
+        imported:
+          type: integer
+          minimum: 0
+        modelsUrl:
+          type: string
+          format: uri
 
     AiGroupCreateRequest:
       type: object
