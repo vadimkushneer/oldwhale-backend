@@ -78,15 +78,24 @@ func (s *Server) PublicAIModels(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusInternalServerError, "db error")
 		return
 	}
+	_, authenticated := UserID(r)
+	jsonOK(w, map[string]any{"groups": publicAIModelCatalog(groups, variants, authenticated)})
+}
+
+func publicAIModelCatalog(groups []db.AIModelGroup, variants [][]db.AIModelVariant, includePaid bool) []map[string]any {
 	out := make([]map[string]any, 0, len(groups))
 	for i := range groups {
 		g := groups[i]
+		if !includePaid && !g.Free {
+			continue
+		}
 		vlist := variants[i]
 		vout := make([]map[string]any, 0, len(vlist))
 		for j := range vlist {
 			v := vlist[j]
 			vout = append(vout, map[string]any{
 				"id":         v.ID,
+				"guid":       v.GUID,
 				"slug":       v.Slug,
 				"label":      v.Label,
 				"is_default": v.IsDefault,
@@ -102,13 +111,13 @@ func (s *Server) PublicAIModels(w http.ResponseWriter, r *http.Request) {
 			"variants": vout,
 		})
 	}
-	jsonOK(w, map[string]any{"groups": out})
+	return out
 }
 
 type aiChatReq struct {
 	Message     string          `json:"message"`
 	GroupSlug   string          `json:"groupSlug"`
-	VariantSlug string          `json:"variantSlug"`
+	VariantGuid string          `json:"variantGuid"`
 	EditorMode  string          `json:"editorMode"`
 	NoteContext json.RawMessage `json:"noteContext"`
 }
@@ -194,9 +203,31 @@ func (s *Server) AIChat(w http.ResponseWriter, r *http.Request) {
 	}
 	in.Message = strings.TrimSpace(in.Message)
 	in.GroupSlug = strings.TrimSpace(in.GroupSlug)
-	in.VariantSlug = strings.TrimSpace(in.VariantSlug)
-	if in.Message == "" || in.GroupSlug == "" || in.VariantSlug == "" {
-		jsonErr(w, http.StatusBadRequest, "message, groupSlug, and variantSlug required")
+	in.VariantGuid = strings.TrimSpace(in.VariantGuid)
+	if in.Message == "" || in.GroupSlug == "" || in.VariantGuid == "" {
+		jsonErr(w, http.StatusBadRequest, "message, groupSlug, and variantGuid required")
+		return
+	}
+	group, err := db.GetAIGroupBySlug(s.DB, in.GroupSlug)
+	if errors.Is(err, sql.ErrNoRows) {
+		jsonErr(w, http.StatusBadRequest, "invalid groupSlug")
+		return
+	}
+	if err != nil {
+		jsonErr(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	variant, err := db.GetAIVariantByGUID(s.DB, in.VariantGuid)
+	if errors.Is(err, sql.ErrNoRows) {
+		jsonErr(w, http.StatusBadRequest, "invalid variantGuid")
+		return
+	}
+	if err != nil {
+		jsonErr(w, http.StatusInternalServerError, "db error")
+		return
+	}
+	if variant.GroupID != group.ID {
+		jsonErr(w, http.StatusBadRequest, "variantGuid does not belong to groupSlug")
 		return
 	}
 	em := normalizeEditorMode(in.EditorMode)
@@ -255,7 +286,7 @@ func (s *Server) AIChat(w http.ResponseWriter, r *http.Request) {
 	if uaStr != "" {
 		uaPtr = &uaStr
 	}
-	if err := db.InsertAIChatLog(s.DB, uid, in.Message, in.GroupSlug, in.VariantSlug, reply, userMessageID, assistantMessageID, ipPtr, uaPtr, em, noteBytes); err != nil {
+	if err := db.InsertAIChatLog(s.DB, uid, in.Message, in.GroupSlug, variant.Slug, reply, userMessageID, assistantMessageID, ipPtr, uaPtr, em, noteBytes); err != nil {
 		log.Printf("ai chat log insert: %v", err)
 	}
 
@@ -443,6 +474,7 @@ func (s *Server) AdminListAIGroups(w http.ResponseWriter, r *http.Request) {
 			v := vlist[j]
 			vout = append(vout, map[string]any{
 				"id":         v.ID,
+				"guid":       v.GUID,
 				"group_id":   v.GroupID,
 				"slug":       v.Slug,
 				"label":      v.Label,

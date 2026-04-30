@@ -4,7 +4,65 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/oldwhale/backend/internal/db"
 )
+
+func TestPublicAIModelCatalogFiltersPaidForGuests(t *testing.T) {
+	groups := []db.AIModelGroup{
+		{ID: 1, Slug: "free", Label: "Free", Free: true},
+		{ID: 2, Slug: "paid", Label: "Paid", Free: false},
+	}
+	variants := [][]db.AIModelVariant{
+		{{ID: 10, GUID: "11111111-1111-4111-8111-111111111111", GroupID: 1, Slug: "free-model", Label: "Free Model", IsDefault: true}},
+		{{ID: 20, GUID: "22222222-2222-4222-8222-222222222222", GroupID: 2, Slug: "paid-model", Label: "Paid Model", IsDefault: true}},
+	}
+
+	got := publicAIModelCatalog(groups, variants, false)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 free group, got %d: %#v", len(got), got)
+	}
+	if got[0]["slug"] != "free" {
+		t.Fatalf("expected free group, got %#v", got[0])
+	}
+}
+
+func TestPublicAIModelCatalogIncludesPaidForAuthenticatedUsers(t *testing.T) {
+	groups := []db.AIModelGroup{
+		{ID: 1, Slug: "free", Label: "Free", Free: true},
+		{ID: 2, Slug: "paid", Label: "Paid", Free: false},
+	}
+	variants := [][]db.AIModelVariant{
+		{{ID: 10, GUID: "11111111-1111-4111-8111-111111111111", GroupID: 1, Slug: "free-model", Label: "Free Model", IsDefault: true}},
+		{{ID: 20, GUID: "22222222-2222-4222-8222-222222222222", GroupID: 2, Slug: "paid-model", Label: "Paid Model", IsDefault: true}},
+	}
+
+	got := publicAIModelCatalog(groups, variants, true)
+	if len(got) != 2 {
+		t.Fatalf("expected all groups, got %d: %#v", len(got), got)
+	}
+	if got[0]["slug"] != "free" || got[1]["slug"] != "paid" {
+		t.Fatalf("unexpected groups: %#v", got)
+	}
+}
+
+func TestPublicAIModelCatalogIncludesVariantGUID(t *testing.T) {
+	groups := []db.AIModelGroup{
+		{ID: 1, Slug: "free", Label: "Free", Free: true},
+	}
+	variants := [][]db.AIModelVariant{
+		{{ID: 10, GUID: "11111111-1111-4111-8111-111111111111", GroupID: 1, Slug: "free-model", Label: "Free Model", IsDefault: true}},
+	}
+
+	got := publicAIModelCatalog(groups, variants, true)
+	gotVariants, ok := got[0]["variants"].([]map[string]any)
+	if !ok || len(gotVariants) != 1 {
+		t.Fatalf("unexpected variants: %#v", got[0]["variants"])
+	}
+	if gotVariants[0]["guid"] != "11111111-1111-4111-8111-111111111111" {
+		t.Fatalf("expected variant guid, got %#v", gotVariants[0])
+	}
+}
 
 func TestNormalizeProviderModels(t *testing.T) {
 	models := []upstreamAIModel{

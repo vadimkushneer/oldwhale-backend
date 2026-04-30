@@ -628,9 +628,10 @@
         "tags": [
           "AiModels"
         ],
-        "summary": "Public AI model catalog",
-        "description": "No authentication.",
+        "summary": "Current-user AI model catalog",
+        "description": "Optional Bearer JWT. Anonymous requests return only groups marked `free`. Authenticated users and admins return all currently enabled groups (all existing rows; no separate enabled flag yet). Groups and variants are ordered by `position`.",
         "operationId": "getPublicAIModels",
+        "security": [{}, {"BearerAuth": []}],
         "responses": {
           "200": {
             "description": "Catalog",
@@ -2239,6 +2240,7 @@
         "type": "object",
         "required": [
           "id",
+          "guid",
           "slug",
           "label",
           "is_default"
@@ -2247,6 +2249,10 @@
           "id": {
             "type": "integer",
             "format": "int64"
+          },
+          "guid": {
+            "type": "string",
+            "format": "uuid"
           },
           "slug": {
             "type": "string"
@@ -2316,6 +2322,7 @@
         "type": "object",
         "required": [
           "id",
+          "guid",
           "group_id",
           "slug",
           "label",
@@ -2327,6 +2334,10 @@
           "id": {
             "type": "integer",
             "format": "int64"
+          },
+          "guid": {
+            "type": "string",
+            "format": "uuid"
           },
           "group_id": {
             "type": "integer",
@@ -2649,7 +2660,7 @@
         "required": [
           "message",
           "groupSlug",
-          "variantSlug"
+          "variantGuid"
         ],
         "properties": {
           "message": {
@@ -2658,8 +2669,9 @@
           "groupSlug": {
             "type": "string"
           },
-          "variantSlug": {
-            "type": "string"
+          "variantGuid": {
+            "type": "string",
+            "format": "uuid"
           },
           "editorMode": {
             "type": "string",

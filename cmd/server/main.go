@@ -47,7 +47,7 @@ func main() {
 	mux.HandleFunc("GET /openapi.yaml", api.OpenAPISpec)
 	mux.HandleFunc("GET /openapi.json", api.OpenAPISpecJSON)
 	mux.HandleFunc("GET /swagger", api.SwaggerUI)
-	mux.HandleFunc("GET /api/ai/models", srv.PublicAIModels)
+	mux.Handle("GET /api/ai/models", api.BearerUser(secret)(http.HandlerFunc(srv.PublicAIModels)))
 	// Explicit method+path (same idea as /api/ai/models) so this route is always registered; the /api/ subtree switch can miss some paths.
 	mux.Handle(
 		"GET /api/admin/ai/chat-logs",

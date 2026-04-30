@@ -1,7 +1,9 @@
 package db
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -24,12 +26,24 @@ type AIModelGroup struct {
 // AIModelVariant is a concrete model under a group (was `AI_MODEL_VARIANTS[group]`).
 type AIModelVariant struct {
 	ID        int64     `json:"id"`
+	GUID      string    `json:"guid"`
 	GroupID   int64     `json:"group_id"`
 	Slug      string    `json:"slug"`
 	Label     string    `json:"label"`
 	IsDefault bool      `json:"is_default"`
 	Position  int       `json:"position"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+func newAIVariantGUID() (string, error) {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	h := hex.EncodeToString(b)
+	return h[0:8] + "-" + h[8:12] + "-" + h[12:16] + "-" + h[16:20] + "-" + h[20:32], nil
 }
 
 func (d *Database) migrateAICatalog() error {
@@ -47,6 +61,7 @@ func (d *Database) migrateAICatalog() error {
 )`,
 		`CREATE TABLE IF NOT EXISTS ai_model_variants (
 	id BIGSERIAL PRIMARY KEY,
+	guid TEXT NOT NULL,
 	group_id BIGINT NOT NULL REFERENCES ai_model_groups(id) ON DELETE CASCADE,
 	slug TEXT NOT NULL,
 	label TEXT NOT NULL DEFAULT '',
@@ -55,6 +70,7 @@ func (d *Database) migrateAICatalog() error {
 	created_at TEXT NOT NULL,
 	UNIQUE (group_id, slug)
 )`,
+		`ALTER TABLE ai_model_variants ADD COLUMN IF NOT EXISTS guid TEXT`,
 		`CREATE INDEX IF NOT EXISTS idx_aiv_group ON ai_model_variants(group_id)`,
 		`CREATE UNIQUE INDEX IF NOT EXISTS uq_aiv_default_per_group ON ai_model_variants(group_id) WHERE is_default = 1`,
 	}
@@ -63,8 +79,47 @@ func (d *Database) migrateAICatalog() error {
 			return err
 		}
 	}
+	if err := d.backfillAIVariantGUIDs(); err != nil {
+		return err
+	}
+	if _, err := d.Exec(`ALTER TABLE ai_model_variants ALTER COLUMN guid SET NOT NULL`); err != nil {
+		return err
+	}
+	if _, err := d.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS uq_aiv_guid ON ai_model_variants(guid)`); err != nil {
+		return err
+	}
 	if _, err := d.Exec(`ALTER TABLE ai_model_groups ADD COLUMN IF NOT EXISTS api_key TEXT NOT NULL DEFAULT ''`); err != nil {
 		return err
+	}
+	return nil
+}
+
+func (d *Database) backfillAIVariantGUIDs() error {
+	rows, err := d.Query(`SELECT id FROM ai_model_variants WHERE guid IS NULL OR btrim(guid) = ''`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		guid, err := newAIVariantGUID()
+		if err != nil {
+			return err
+		}
+		if _, err := d.Exec(`UPDATE ai_model_variants SET guid=$1 WHERE id=$2`, guid, id); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -147,9 +202,13 @@ func SeedAICatalog(d *Database) error {
 			if vv.def {
 				def = 1
 			}
-			_, err := tx.Exec(
-				`INSERT INTO ai_model_variants(group_id,slug,label,is_default,position,created_at) VALUES ($1,$2,$3,$4,$5,$6)`,
-				gid, vv.slug, vv.label, def, vv.pos, now,
+			guid, err := newAIVariantGUID()
+			if err != nil {
+				return err
+			}
+			_, err = tx.Exec(
+				`INSERT INTO ai_model_variants(guid,group_id,slug,label,is_default,position,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+				guid, gid, vv.slug, vv.label, def, vv.pos, now,
 			)
 			if err != nil {
 				return err
@@ -163,7 +222,7 @@ func SeedAICatalog(d *Database) error {
 func ListAICatalogPublic(d *Database) ([]AIModelGroup, [][]AIModelVariant, error) {
 	rows, err := d.Query(`
 SELECT g.id,g.slug,g.label,g.role,g.color,g.free,g.position,g.api_key,g.created_at,
-	v.id,v.slug,v.label,v.is_default,v.position,v.created_at
+	v.id,v.guid,v.slug,v.label,v.is_default,v.position,v.created_at
 FROM ai_model_groups g
 LEFT JOIN ai_model_variants v ON v.group_id = g.id
 ORDER BY g.position, g.id, v.position, v.id`)
@@ -189,13 +248,14 @@ func scanCatalogJoinedRows(rows *sql.Rows) ([]AIModelGroup, [][]AIModelVariant, 
 		var gCreated string
 		var gFree int
 		var vid sql.NullInt64
+		var vguid sql.NullString
 		var vslug, vlabel sql.NullString
 		var vdef sql.NullInt64
 		var vpos sql.NullInt64
 		var vcreated sql.NullString
 		err := rows.Scan(
 			&g.ID, &g.Slug, &g.Label, &g.Role, &g.Color, &gFree, &g.Position, &g.APIKey, &gCreated,
-			&vid, &vslug, &vlabel, &vdef, &vpos, &vcreated,
+			&vid, &vguid, &vslug, &vlabel, &vdef, &vpos, &vcreated,
 		)
 		if err != nil {
 			return nil, nil, err
@@ -214,6 +274,7 @@ func scanCatalogJoinedRows(rows *sql.Rows) ([]AIModelGroup, [][]AIModelVariant, 
 		if vid.Valid {
 			v := AIModelVariant{
 				ID:        vid.Int64,
+				GUID:      vguid.String,
 				GroupID:   g.ID,
 				Slug:      vslug.String,
 				Label:     vlabel.String,
@@ -388,10 +449,14 @@ func CreateAIVariant(d *Database, groupID int64, slug, label string, isDefault b
 	if isDefault {
 		def = 1
 	}
+	guid, err := newAIVariantGUID()
+	if err != nil {
+		return nil, err
+	}
 	var id int64
 	err = tx.QueryRow(
-		`INSERT INTO ai_model_variants(group_id,slug,label,is_default,position,created_at) VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
-		groupID, slug, label, def, pos, now,
+		`INSERT INTO ai_model_variants(guid,group_id,slug,label,is_default,position,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+		guid, groupID, slug, label, def, pos, now,
 	).Scan(&id)
 	if err != nil {
 		return nil, err
@@ -411,7 +476,7 @@ type AIImportedVariant struct {
 // ListAIVariantsByGroup returns variants for one group ordered for admin display.
 func ListAIVariantsByGroup(d *Database, groupID int64) ([]AIModelVariant, error) {
 	rows, err := d.Query(
-		`SELECT id,group_id,slug,label,is_default,position,created_at
+		`SELECT id,guid,group_id,slug,label,is_default,position,created_at
 FROM ai_model_variants
 WHERE group_id=$1
 ORDER BY position,id`,
@@ -458,10 +523,15 @@ func UpsertAIVariants(d *Database, groupID int64, variants []AIImportedVariant) 
 		if defaultCount == 0 && i == 0 {
 			def = 1
 		}
+		guid, err := newAIVariantGUID()
+		if err != nil {
+			return nil, err
+		}
 		if _, err := tx.Exec(
-			`INSERT INTO ai_model_variants(group_id,slug,label,is_default,position,created_at)
-VALUES ($1,$2,$3,$4,$5,$6)
+			`INSERT INTO ai_model_variants(guid,group_id,slug,label,is_default,position,created_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7)
 ON CONFLICT (group_id,slug) DO UPDATE SET label=EXCLUDED.label, position=EXCLUDED.position`,
+			guid,
 			groupID,
 			slug,
 			label,
@@ -490,8 +560,17 @@ ON CONFLICT (group_id,slug) DO UPDATE SET label=EXCLUDED.label, position=EXCLUDE
 // GetAIVariantByID returns variant + group_id.
 func GetAIVariantByID(d *Database, id int64) (*AIModelVariant, error) {
 	row := d.QueryRow(
-		`SELECT id,group_id,slug,label,is_default,position,created_at FROM ai_model_variants WHERE id=$1`,
+		`SELECT id,guid,group_id,slug,label,is_default,position,created_at FROM ai_model_variants WHERE id=$1`,
 		id,
+	)
+	return scanAIVariantRow(row)
+}
+
+// GetAIVariantByGUID returns variant + group_id by stable public GUID.
+func GetAIVariantByGUID(d *Database, guid string) (*AIModelVariant, error) {
+	row := d.QueryRow(
+		`SELECT id,guid,group_id,slug,label,is_default,position,created_at FROM ai_model_variants WHERE guid=$1`,
+		guid,
 	)
 	return scanAIVariantRow(row)
 }
@@ -500,7 +579,7 @@ func scanAIVariantRow(row scanner) (*AIModelVariant, error) {
 	var v AIModelVariant
 	var def int
 	var created string
-	err := row.Scan(&v.ID, &v.GroupID, &v.Slug, &v.Label, &def, &v.Position, &created)
+	err := row.Scan(&v.ID, &v.GUID, &v.GroupID, &v.Slug, &v.Label, &def, &v.Position, &created)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
