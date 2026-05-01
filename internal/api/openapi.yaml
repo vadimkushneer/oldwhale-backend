@@ -215,10 +215,11 @@ paths:
   /api/ai/chat:
     post:
       tags: [AiModels]
-      summary: Chat stub (fixed reply)
+      summary: Start an AI chat request
       description: |
-        Public endpoint. Sends user message and selected catalog slugs; currently returns a constant reply (no LLM).
+        Public endpoint. Sends user message and selected catalog slugs, starts an upstream LLM request, and returns request ids immediately.
         Optional `Authorization: Bearer` (valid JWT) associates the request with a user for server-side audit logging.
+        The final assistant reply is delivered by `GET /api/ai/chat/events?requestId=...`.
       operationId: postAiChat
       requestBody:
         required: true
@@ -227,14 +228,55 @@ paths:
             schema:
               $ref: "#/components/schemas/AiChatRequest"
       responses:
-        "200":
-          description: Assistant reply
+        "202":
+          description: Chat request accepted
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/AiChatResponse"
+                $ref: "#/components/schemas/AiChatAcceptedResponse"
         "400":
           description: Invalid JSON or missing required fields
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "405":
+          description: Method not allowed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/ai/chat/events:
+    get:
+      tags: [AiModels]
+      summary: Wait for an AI chat result
+      description: |
+        Server-to-client event stream for a previously accepted chat request.
+        Emits one final `ready` event with `AiChatResponse`, or one `error` event with an error body.
+      operationId: getAiChatEvents
+      parameters:
+        - name: requestId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Event stream containing the final chat result
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "400":
+          description: Missing request id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Chat request not found
           content:
             application/json:
               schema:
@@ -1074,6 +1116,23 @@ components:
           description: Active editor surface when the message was sent; server defaults to `film` if omitted.
         noteContext:
           $ref: "#/components/schemas/AiChatNoteContextRequest"
+
+    AiChatAcceptedResponse:
+      type: object
+      required: [requestId, userMessageId, assistantMessageId]
+      properties:
+        requestId:
+          type: string
+          format: uuid
+          description: Server-issued id for the asynchronous chat request.
+        userMessageId:
+          type: string
+          format: uuid
+          description: Server-issued id for the user turn (UUID v4).
+        assistantMessageId:
+          type: string
+          format: uuid
+          description: Server-issued id reserved for the assistant reply (UUID v4).
 
     AiChatResponse:
       type: object

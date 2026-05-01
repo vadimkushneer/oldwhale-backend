@@ -1,11 +1,14 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/oldwhale/backend/internal/db"
+	"github.com/oldwhale/backend/internal/llm"
 )
 
 func TestPublicAIModelCatalogFiltersPaidForGuests(t *testing.T) {
@@ -151,5 +154,57 @@ func TestRequestProviderAIModelsUsesBearerHeaders(t *testing.T) {
 	}
 	if len(models) != 1 || models[0].ID != "gpt-5" {
 		t.Fatalf("unexpected models: %#v", models)
+	}
+}
+
+type fakeAIChatClient struct {
+	reply string
+	err   error
+	seen  chan llm.ChatRequest
+}
+
+func (f fakeAIChatClient) Chat(ctx context.Context, req llm.ChatRequest) (string, error) {
+	if f.seen != nil {
+		f.seen <- req
+	}
+	return f.reply, f.err
+}
+
+func TestAIChatEventsEmitsReadyResult(t *testing.T) {
+	seen := make(chan llm.ChatRequest, 1)
+	srv := &Server{
+		AIChatClient: fakeAIChatClient{reply: "real reply", seen: seen},
+		AIChatJobs:   NewAIChatJobStore(),
+	}
+	srv.AIChatJobs.Create(
+		"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+		"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+		"cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+	)
+
+	go srv.runAIChatJob(
+		"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+		llm.ChatRequest{Provider: "ollama", Model: "llama3.2", Message: "hello"},
+		aiChatLogPayload{},
+	)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/ai/chat/events?requestId=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", nil)
+	rr := httptest.NewRecorder()
+	srv.AIChatEvents(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", rr.Code, rr.Body.String())
+	}
+	if got := rr.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/event-stream") {
+		t.Fatalf("Content-Type = %q", got)
+	}
+	body := rr.Body.String()
+	if !strings.Contains(body, "event: ready") || !strings.Contains(body, `"reply":"real reply"`) {
+		t.Fatalf("unexpected event body: %s", body)
+	}
+
+	gotReq := <-seen
+	if gotReq.Model != "llama3.2" {
+		t.Fatalf("model = %q", gotReq.Model)
 	}
 }

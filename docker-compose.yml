@@ -34,6 +34,8 @@ services:
       PORT: "8080"
       # Set on host: export ANTHROPIC_API_KEY=...  (never commit real keys)
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_API_KEY: ${OLLAMA_API_KEY:-}
     depends_on:
       db:
         condition: service_healthy

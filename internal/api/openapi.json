@@ -1626,8 +1626,8 @@
         "tags": [
           "AiModels"
         ],
-        "summary": "Chat stub (fixed reply)",
-        "description": "Public stub; optional Bearer associates user for audit logs.",
+        "summary": "Start an AI chat request",
+        "description": "Public endpoint. Sends user message and selected catalog slugs, starts an upstream LLM request, and returns request ids immediately. Optional Bearer associates user for audit logs. The final assistant reply is delivered by GET /api/ai/chat/events?requestId=...",
         "operationId": "postAiChat",
         "requestBody": {
           "required": true,
@@ -1640,12 +1640,12 @@
           }
         },
         "responses": {
-          "200": {
-            "description": "Assistant reply",
+          "202": {
+            "description": "Chat request accepted",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/AiChatResponse"
+                  "$ref": "#/components/schemas/AiChatAcceptedResponse"
                 }
               }
             }
@@ -1662,6 +1662,69 @@
           },
           "405": {
             "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ai/chat/events": {
+      "get": {
+        "tags": [
+          "AiModels"
+        ],
+        "summary": "Wait for an AI chat result",
+        "description": "Server-to-client event stream for a previously accepted chat request. Emits one final ready event with AiChatResponse, or one error event with an error body.",
+        "operationId": "getAiChatEvents",
+        "parameters": [
+          {
+            "name": "requestId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Event stream containing the final chat result",
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing request id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Chat request not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Method not allowed",
             "content": {
               "application/json": {
                 "schema": {
@@ -2686,6 +2749,28 @@
           },
           "noteContext": {
             "$ref": "#/components/schemas/AiChatNoteContextRequest"
+          }
+        }
+      },
+      "AiChatAcceptedResponse": {
+        "type": "object",
+        "required": [
+          "requestId",
+          "userMessageId",
+          "assistantMessageId"
+        ],
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "userMessageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "assistantMessageId": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },

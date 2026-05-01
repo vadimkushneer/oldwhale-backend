@@ -6,17 +6,23 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/oldwhale/backend/internal/auth"
 	"github.com/oldwhale/backend/internal/db"
+	"github.com/oldwhale/backend/internal/llm"
 	"golang.org/x/crypto/bcrypt"
 )
 
 type Server struct {
-	DB        *db.Database
-	JWTSecret []byte
-	JWTTTL    time.Duration
+	DB           *db.Database
+	JWTSecret    []byte
+	JWTTTL       time.Duration
+	AIChatClient llm.Client
+	AIChatJobs   *AIChatJobStore
+
+	aiChatInitMu sync.Mutex
 }
 
 type loginReq struct {

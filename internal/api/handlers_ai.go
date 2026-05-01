@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
@@ -20,6 +21,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/oldwhale/backend/internal/db"
+	"github.com/oldwhale/backend/internal/llm"
 )
 
 const maxAiChatBodyBytes = 1 << 20
@@ -189,7 +191,7 @@ func requestClientIP(r *http.Request) string {
 	return host
 }
 
-// AIChat is a public stub: validates JSON and returns a fixed reply (no upstream LLM call).
+// AIChat validates the chat request and starts an asynchronous upstream LLM call.
 func (s *Server) AIChat(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		jsonErr(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -230,12 +232,17 @@ func (s *Server) AIChat(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, http.StatusBadRequest, "variantGuid does not belong to groupSlug")
 		return
 	}
+	if !llm.SupportsProvider(group.Slug) {
+		jsonErr(w, http.StatusBadRequest, "unsupported ai provider")
+		return
+	}
 	em := normalizeEditorMode(in.EditorMode)
 	if !validEditorMode(em) {
 		jsonErr(w, http.StatusBadRequest, "invalid editorMode")
 		return
 	}
 	var noteBytes []byte
+	var noteCtx aiChatNoteCtx
 	if em == "note" {
 		if len(in.NoteContext) == 0 {
 			jsonErr(w, http.StatusBadRequest, "noteContext required for note mode")
@@ -267,9 +274,10 @@ func (s *Server) AIChat(w http.ResponseWriter, r *http.Request) {
 			jsonErr(w, http.StatusBadRequest, "invalid noteContext")
 			return
 		}
+		noteCtx = nc
 	}
 
-	reply := "HELLO FROM OLD WHALE"
+	requestID := randomUUIDv4()
 	userMessageID := randomUUIDv4()
 	assistantMessageID := randomUUIDv4()
 
@@ -286,15 +294,142 @@ func (s *Server) AIChat(w http.ResponseWriter, r *http.Request) {
 	if uaStr != "" {
 		uaPtr = &uaStr
 	}
-	if err := db.InsertAIChatLog(s.DB, uid, in.Message, in.GroupSlug, variant.Slug, reply, userMessageID, assistantMessageID, ipPtr, uaPtr, em, noteBytes); err != nil {
-		log.Printf("ai chat log insert: %v", err)
-	}
+	s.aiChatJobStore().Create(requestID, userMessageID, assistantMessageID)
+	go s.runAIChatJob(requestID, llm.ChatRequest{
+		Provider:            group.Slug,
+		Model:               variant.Slug,
+		APIKey:              group.APIKey,
+		Message:             in.Message,
+		EditorMode:          em,
+		ConversationHistory: aiChatLLMHistory(noteCtx.ConversationHistory),
+		WorkfieldHTML:       noteCtx.WorkfieldHtml,
+	}, aiChatLogPayload{
+		userID:             uid,
+		message:            in.Message,
+		groupSlug:          in.GroupSlug,
+		variantSlug:        variant.Slug,
+		userMessageID:      userMessageID,
+		assistantMessageID: assistantMessageID,
+		clientIP:           ipPtr,
+		userAgent:          uaPtr,
+		editorMode:         em,
+		noteContextJSON:    noteBytes,
+	})
 
-	jsonOK(w, map[string]any{
-		"reply":              reply,
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"requestId":          requestID,
 		"userMessageId":      userMessageID,
 		"assistantMessageId": assistantMessageID,
 	})
+}
+
+type aiChatLogPayload struct {
+	userID             *int64
+	message            string
+	groupSlug          string
+	variantSlug        string
+	userMessageID      string
+	assistantMessageID string
+	clientIP           *string
+	userAgent          *string
+	editorMode         string
+	noteContextJSON    []byte
+}
+
+func aiChatLLMHistory(history []aiChatConvMsg) []llm.ConversationMessage {
+	out := make([]llm.ConversationMessage, 0, len(history))
+	for _, msg := range history {
+		out = append(out, llm.ConversationMessage{
+			ID:           msg.ID,
+			Role:         msg.Role,
+			Text:         msg.Text,
+			Model:        msg.Model,
+			ModelVariant: msg.ModelVariant,
+		})
+	}
+	return out
+}
+
+func (s *Server) runAIChatJob(requestID string, req llm.ChatRequest, logPayload aiChatLogPayload) {
+	reply, err := s.aiChatClient().Chat(context.Background(), req)
+	if err != nil {
+		log.Printf("ai chat llm request %s: %v", requestID, err)
+		s.aiChatJobStore().CompleteError(requestID, "Не удалось получить ответ от LLM.")
+		return
+	}
+	if s.DB != nil {
+		if err := db.InsertAIChatLog(
+			s.DB,
+			logPayload.userID,
+			logPayload.message,
+			logPayload.groupSlug,
+			logPayload.variantSlug,
+			reply,
+			logPayload.userMessageID,
+			logPayload.assistantMessageID,
+			logPayload.clientIP,
+			logPayload.userAgent,
+			logPayload.editorMode,
+			logPayload.noteContextJSON,
+		); err != nil {
+			log.Printf("ai chat log insert: %v", err)
+		}
+	}
+	s.aiChatJobStore().CompleteReady(requestID, reply)
+}
+
+func (s *Server) AIChatEvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		jsonErr(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+	requestID := strings.TrimSpace(r.URL.Query().Get("requestId"))
+	if requestID == "" {
+		jsonErr(w, http.StatusBadRequest, "requestId required")
+		return
+	}
+	job, ok := s.aiChatJobStore().Get(requestID)
+	if !ok {
+		jsonErr(w, http.StatusNotFound, "chat request not found")
+		return
+	}
+	select {
+	case <-job.done:
+	case <-r.Context().Done():
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	if job.err != "" {
+		writeSSE(w, "error", map[string]any{
+			"requestId":          job.RequestID,
+			"error":              job.err,
+			"userMessageId":      job.UserMessageID,
+			"assistantMessageId": job.AssistantMessageID,
+		})
+		return
+	}
+	writeSSE(w, "ready", map[string]any{
+		"requestId":          job.RequestID,
+		"reply":              job.reply,
+		"userMessageId":      job.UserMessageID,
+		"assistantMessageId": job.AssistantMessageID,
+	})
+}
+
+func writeSSE(w http.ResponseWriter, event string, data any) {
+	raw, err := json.Marshal(data)
+	if err != nil {
+		raw = []byte(`{"error":"event encoding failed"}`)
+	}
+	_, _ = fmt.Fprintf(w, "event: %s\n", event)
+	_, _ = fmt.Fprintf(w, "data: %s\n\n", raw)
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 func (s *Server) AdminListAIChatLogs(w http.ResponseWriter, r *http.Request) {

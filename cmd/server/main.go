@@ -73,6 +73,8 @@ func main() {
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/ai/chat":
 			srv.AIChat(w, r)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/ai/chat/events":
+			srv.AIChatEvents(w, r)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/admin/me/ui-settings":
 			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminMeUISettingsGet))).ServeHTTP(w, r)
 		case r.Method == http.MethodPut && r.URL.Path == "/api/admin/me/ui-settings":
