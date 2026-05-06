@@ -1,160 +1,106 @@
 package main
 
 import (
-	"log"
-	"net/http"
-	"net/url"
+	"context"
+	"errors"
+	"log/slog"
+	stdhttp "net/http"
 	"os"
-	"strings"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/joho/godotenv"
 
-	"github.com/oldwhale/backend/internal/api"
+	"github.com/oldwhale/backend/internal/config"
 	"github.com/oldwhale/backend/internal/db"
+	dbgen "github.com/oldwhale/backend/internal/db/generated"
+	"github.com/oldwhale/backend/internal/domain"
+	httpapi "github.com/oldwhale/backend/internal/http"
+	"github.com/oldwhale/backend/internal/jobs"
+	"github.com/oldwhale/backend/internal/llm"
+	"github.com/oldwhale/backend/internal/service"
 )
 
 func main() {
 	_ = godotenv.Load()
+	cfg := config.MustLoad()
+	ctx := context.Background()
 
-	d, err := db.OpenFromEnv()
+	pool, err := db.OpenPool(ctx, cfg)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("open database", "err", err)
+		os.Exit(1)
 	}
-	defer d.Close()
+	defer pool.Close()
 
-	if err := api.SeedAdmin(d); err != nil {
-		log.Printf("seed admin: %v", err)
-	}
-	if err := db.SeedAICatalog(d); err != nil {
-		log.Printf("seed ai catalog: %v", err)
-	}
-
-	secret := []byte(os.Getenv("JWT_SECRET"))
-	if len(secret) < 16 {
-		secret = []byte("dev-secret-change-me-32chars!!")
-		log.Println("warning: using default JWT_SECRET; set JWT_SECRET in production")
+	if err := db.ApplySchema(ctx, pool, cfg.ResetSchemaOnStart); err != nil {
+		slog.Error("apply schema", "err", err)
+		os.Exit(1)
 	}
 
-	ttl := 72 * time.Hour
-	srv := &api.Server{DB: d, JWTSecret: secret, JWTTTL: ttl}
+	q := dbgen.New(pool)
+	secrets := service.NewSecretsService()
+	users := service.NewUserService(q)
+	catalog := service.NewAICatalogService(q, secrets)
+	chatLog := service.NewAIChatLogService(q, pool)
+	ui := service.NewAdminUIService(q)
+	jobStore := jobs.NewAIChatJobStore()
+	llmClient := llm.NewProviderClient(cfg.AnthropicBaseURL, cfg.OllamaBaseURL)
+	chat := service.NewAIChatService(q, secrets, jobStore, llmClient, chatLog)
 
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("POST /api/auth/register", srv.Register)
-	mux.HandleFunc("POST /api/auth/login", srv.Login)
-	mux.HandleFunc("GET /health", srv.Health)
-	mux.HandleFunc("GET /openapi.yaml", api.OpenAPISpec)
-	mux.HandleFunc("GET /openapi.json", api.OpenAPISpecJSON)
-	mux.HandleFunc("GET /swagger", api.SwaggerUI)
-	mux.Handle("GET /api/ai/models", api.BearerUser(secret)(http.HandlerFunc(srv.PublicAIModels)))
-	// Explicit method+path (same idea as /api/ai/models) so this route is always registered; the /api/ subtree switch can miss some paths.
-	mux.Handle(
-		"GET /api/admin/ai/chat-logs",
-		api.BearerUser(secret)(
-			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminListAIChatLogs))),
-		),
-	)
-	mux.Handle(
-		"GET /api/admin/me/ui-settings",
-		api.BearerUser(secret)(
-			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminMeUISettingsGet))),
-		),
-	)
-	mux.Handle(
-		"PUT /api/admin/me/ui-settings",
-		api.BearerUser(secret)(
-			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminMeUISettingsPut))),
-		),
-	)
-
-	// Protected /api/* routes (JWT optional via BearerUser).
-	apiProtected := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/api/ai/chat":
-			srv.AIChat(w, r)
-		case r.Method == http.MethodGet && r.URL.Path == "/api/ai/chat/events":
-			srv.AIChatEvents(w, r)
-		case r.Method == http.MethodGet && r.URL.Path == "/api/admin/me/ui-settings":
-			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminMeUISettingsGet))).ServeHTTP(w, r)
-		case r.Method == http.MethodPut && r.URL.Path == "/api/admin/me/ui-settings":
-			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminMeUISettingsPut))).ServeHTTP(w, r)
-		case r.Method == http.MethodGet && r.URL.Path == "/api/me":
-			api.RequireAuth(http.HandlerFunc(srv.Me)).ServeHTTP(w, r)
-		case r.Method == http.MethodPost && r.URL.Path == "/api/admin/ai/env-lookup":
-			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminEnvLookup))).ServeHTTP(w, r)
-		case r.Method == http.MethodGet && r.URL.Path == "/api/admin/ai/model-providers":
-			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminListAIModelProviders))).ServeHTTP(w, r)
-		case r.Method == http.MethodGet && r.URL.Path == "/api/admin/ai/groups":
-			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminListAIGroups))).ServeHTTP(w, r)
-		case r.Method == http.MethodPost && r.URL.Path == "/api/admin/ai/groups":
-			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminCreateAIGroup))).ServeHTTP(w, r)
-		case r.Method == http.MethodPut && r.URL.Path == "/api/admin/ai/groups/order":
-			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminReorderAIGroups))).ServeHTTP(w, r)
-		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/admin/ai/groups/") && strings.HasSuffix(r.URL.Path, "/models/import"):
-			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminImportAIModels))).ServeHTTP(w, r)
-		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/admin/ai/groups/") && strings.HasSuffix(r.URL.Path, "/variants"):
-			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminCreateAIVariant))).ServeHTTP(w, r)
-		case r.Method == http.MethodPut && strings.HasPrefix(r.URL.Path, "/api/admin/ai/groups/") && strings.HasSuffix(r.URL.Path, "/variants/order"):
-			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminReorderAIVariants))).ServeHTTP(w, r)
-		case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/api/admin/ai/groups/"):
-			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminPatchAIGroup))).ServeHTTP(w, r)
-		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/admin/ai/groups/"):
-			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminDeleteAIGroup))).ServeHTTP(w, r)
-		case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/api/admin/ai/variants/"):
-			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminPatchAIVariant))).ServeHTTP(w, r)
-		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/admin/ai/variants/"):
-			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminDeleteAIVariant))).ServeHTTP(w, r)
-		case r.Method == http.MethodGet && r.URL.Path == "/api/admin/users":
-			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminListUsers))).ServeHTTP(w, r)
-		case r.Method == http.MethodPost && r.URL.Path == "/api/admin/users":
-			api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminCreateUser))).ServeHTTP(w, r)
-		case (r.Method == http.MethodPatch || r.Method == http.MethodDelete) && len(r.URL.Path) > len("/api/admin/users/") && r.URL.Path[:len("/api/admin/users/")] == "/api/admin/users/":
-			if r.Method == http.MethodPatch {
-				api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminPatchUser))).ServeHTTP(w, r)
-			} else {
-				api.RequireAuth(api.RequireAdmin(http.HandlerFunc(srv.AdminDeleteUser))).ServeHTTP(w, r)
-			}
-		default:
-			http.NotFound(w, r)
+	if err := users.SeedAdmin(ctx, service.AdminSeed{
+		Username:     cfg.AdminUsername,
+		Password:     cfg.AdminPassword,
+		Email:        cfg.AdminEmail,
+		SyncPassword: cfg.AdminPasswordSync,
+	}); err != nil {
+		if errors.Is(err, domain.ErrAdminCredentialsMissing) {
+			slog.Error("admin seed credentials missing", "err", err)
+			os.Exit(1)
 		}
-	})
+		slog.Error("seed admin", "err", err)
+		os.Exit(1)
+	}
+	if err := catalog.SeedDefaultIfEmpty(ctx); err != nil {
+		slog.Error("seed ai catalog", "err", err)
+		os.Exit(1)
+	}
 
-	mux.Handle("/api/", api.BearerUser(secret)(apiProtected))
+	handlers := httpapi.NewHandlers(pool, users, catalog, chat, chatLog, ui, secrets, cfg.JWTSecret, cfg.JWTTTL)
+	router := httpapi.NewRouter(handlers, cfg.JWTSecret, cfg.CORSOrigin)
+	server := &stdhttp.Server{
+		Addr:              cfg.HTTPAddr,
+		Handler:           router,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 
-	addr := os.Getenv("HTTP_ADDR")
-	if addr == "" {
-		if p := os.Getenv("PORT"); p != "" {
-			addr = ":" + p
-		} else {
-			addr = ":8080"
+	errCh := make(chan error, 1)
+	go func() {
+		slog.Info("Old Whale API listening", "addr", cfg.HTTPAddr)
+		errCh <- server.ListenAndServe()
+	}()
+
+	stop := make(chan os.Signal, 1)
+	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
+	select {
+	case sig := <-stop:
+		slog.Info("shutdown requested", "signal", sig.String())
+	case err := <-errCh:
+		if err != nil && !errors.Is(err, stdhttp.ErrServerClosed) {
+			slog.Error("server stopped", "err", err)
+			os.Exit(1)
 		}
+		return
 	}
 
-	corsOrigin := normalizeCORSOrigin(os.Getenv("CORS_ORIGIN"))
-
-	handler := api.CORS(corsOrigin)(mux)
-
-	log.Printf("Old Whale API listening on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, handler))
-}
-
-// normalizeCORSOrigin returns a value suitable for Access-Control-Allow-Origin, or "" to mean wildcard.
-// App Platform / dashboards sometimes store a mistaken "secret" in CORS_ORIGIN (e.g. ciphertext starting with "EV[");
-// that is not a valid origin and browsers reject it — treat as unset.
-func normalizeCORSOrigin(raw string) string {
-	o := strings.TrimSpace(raw)
-	o = strings.Trim(o, `"'`)
-	if o == "" {
-		return ""
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		slog.Error("graceful shutdown", "err", err)
+		os.Exit(1)
 	}
-	if o == "*" {
-		return "*"
-	}
-	u, err := url.Parse(o)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		log.Printf("warning: CORS_ORIGIN is not a valid http(s) origin (raw=%q); using Access-Control-Allow-Origin: *", raw)
-		return ""
-	}
-	return u.Scheme + "://" + u.Host
 }

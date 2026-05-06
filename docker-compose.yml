@@ -32,8 +32,14 @@ services:
       JWT_SECRET: local-dev-change-me-to-32-chars-min!!
       CORS_ORIGIN: http://localhost:5173
       PORT: "8080"
+      ADMIN_USERNAME: admin
+      ADMIN_PASSWORD: admin123
+      ADMIN_EMAIL: admin@oldwhale.local
+      RESET_SCHEMA_ON_START: "false"
+      ADMIN_PASSWORD_SYNC: "true"
       # Set on host: export ANTHROPIC_API_KEY=...  (never commit real keys)
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       OLLAMA_API_KEY: ${OLLAMA_API_KEY:-}
     depends_on:

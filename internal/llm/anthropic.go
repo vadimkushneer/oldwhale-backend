@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 )
 
@@ -18,16 +17,11 @@ const defaultAnthropicMaxTokens = 2048
 // AnthropicClient calls the Anthropic Messages API.
 type AnthropicClient struct {
 	BaseURL    string
-	APIKey     string
 	HTTPClient *http.Client
 }
 
-// NewAnthropicClientFromEnv creates an Anthropic client using optional environment overrides.
-func NewAnthropicClientFromEnv() *AnthropicClient {
-	return &AnthropicClient{
-		BaseURL: strings.TrimSpace(os.Getenv("ANTHROPIC_BASE_URL")),
-		APIKey:  strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY")),
-	}
+func NewAnthropicClient(baseURL string) *AnthropicClient {
+	return &AnthropicClient{BaseURL: strings.TrimSpace(baseURL)}
 }
 
 func (c *AnthropicClient) Chat(ctx context.Context, req ChatRequest) (string, error) {
@@ -35,7 +29,7 @@ func (c *AnthropicClient) Chat(ctx context.Context, req ChatRequest) (string, er
 	if model == "" {
 		return "", fmt.Errorf("anthropic model is required")
 	}
-	apiKey := resolveSecret(req.APIKey, c.APIKey)
+	apiKey := strings.TrimSpace(req.APIKey)
 	if apiKey == "" {
 		return "", fmt.Errorf("anthropic api key is required")
 	}

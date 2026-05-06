@@ -1,198 +1,55 @@
 package db
 
 import (
-	"database/sql"
-	"errors"
+	"context"
 	"fmt"
-	"os"
-	"strings"
 	"time"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/oldwhale/backend/internal/config"
+	dbgen "github.com/oldwhale/backend/internal/db/generated"
+	"github.com/oldwhale/backend/internal/schema"
 )
 
-// Database is a PostgreSQL connection pool (via pgx stdlib driver).
-type Database struct {
-	*sql.DB
+type Querier = dbgen.Querier
+
+func OpenPool(ctx context.Context, cfg config.Config) (*pgxpool.Pool, error) {
+	pcfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
+	if err != nil {
+		return nil, err
+	}
+	pcfg.MaxConns = 25
+	pcfg.MinConns = 2
+	pcfg.MaxConnLifetime = 30 * time.Minute
+	pcfg.MaxConnIdleTime = 10 * time.Minute
+	pcfg.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+		_, err := conn.Exec(ctx, "SET statement_timeout = '30s'")
+		return err
+	}
+	pool, err := pgxpool.NewWithConfig(ctx, pcfg)
+	if err != nil {
+		return nil, err
+	}
+	if err := pool.Ping(ctx); err != nil {
+		pool.Close()
+		return nil, err
+	}
+	return pool, nil
 }
 
-// OpenFromEnv opens PostgreSQL using DATABASE_URL (required).
-func OpenFromEnv() (*Database, error) {
-	url := strings.TrimSpace(os.Getenv("DATABASE_URL"))
-	if url == "" {
-		return nil, fmt.Errorf("DATABASE_URL is required: set it to a PostgreSQL connection URI (see README_DOCKER.md and README_DATABASE.md)")
-	}
-	// Strip a single pair of surrounding quotes (some dashboards store values that way).
-	if len(url) >= 2 {
-		if url[0] == '"' && url[len(url)-1] == '"' {
-			url = url[1 : len(url)-1]
-		} else if url[0] == '\'' && url[len(url)-1] == '\'' {
-			url = url[1 : len(url)-1]
+func ApplySchema(ctx context.Context, pool *pgxpool.Pool, reset bool) error {
+	if reset {
+		if _, err := pool.Exec(ctx, `
+DROP TABLE IF EXISTS ai_chat_logs, ai_model_variants, ai_model_groups, user_ui_preferences, users CASCADE;
+DROP FUNCTION IF EXISTS set_updated_at CASCADE;
+`); err != nil {
+			return fmt.Errorf("reset schema: %w", err)
 		}
 	}
-	url = strings.TrimSpace(url)
-	if strings.Contains(url, "${") {
-		return nil, fmt.Errorf("DATABASE_URL still contains ${...} (got %q): this is an App Platform bindable that was not resolved to a postgres URI. Put DATABASE_URL on the web component at runtime (not only build time), use insert reference so the name matches your database component, or paste a full postgres://… string from the database connection UI — see README_DATABASE.md § DigitalOcean App Platform", url)
-	}
-	inner, err := sql.Open("pgx", url)
-	if err != nil {
-		return nil, err
-	}
-	inner.SetMaxOpenConns(10)
-	d := &Database{inner}
-	if err := d.migrate(); err != nil {
-		_ = inner.Close()
-		return nil, err
-	}
-	return d, nil
-}
-
-func (d *Database) migrate() error {
-	_, err := d.Exec(`
-CREATE TABLE IF NOT EXISTS users (
-	id BIGSERIAL PRIMARY KEY,
-	login TEXT NOT NULL UNIQUE,
-	email TEXT NOT NULL UNIQUE,
-	password_hash TEXT NOT NULL,
-	role TEXT NOT NULL DEFAULT 'user',
-	disabled INTEGER NOT NULL DEFAULT 0,
-	created_at TEXT NOT NULL
-)`)
-	if err != nil {
-		return err
-	}
-	if _, err = d.Exec(`CREATE INDEX IF NOT EXISTS idx_users_login ON users(login)`); err != nil {
-		return err
-	}
-	if err := d.migrateAICatalog(); err != nil {
-		return err
-	}
-	if err := d.migrateAIChatLogs(); err != nil {
-		return err
-	}
-	if err := d.migrateUserUIPreferences(); err != nil {
-		return err
+	if _, err := pool.Exec(ctx, schema.SQL); err != nil {
+		return fmt.Errorf("apply schema: %w", err)
 	}
 	return nil
-}
-
-type User struct {
-	ID           int64     `json:"id"`
-	Login        string    `json:"login"`
-	Email        string    `json:"email"`
-	Role         string    `json:"role"`
-	Disabled     bool      `json:"disabled"`
-	CreatedAt    time.Time `json:"created_at"`
-	PasswordHash string    `json:"-"`
-}
-
-func CountUsers(d *Database) (int, error) {
-	var n int
-	err := d.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&n)
-	return n, err
-}
-
-func CreateUser(d *Database, login, email, hash, role string) (*User, error) {
-	now := time.Now().UTC().Format(time.RFC3339)
-	var id int64
-	err := d.QueryRow(
-		`INSERT INTO users(login,email,password_hash,role,disabled,created_at) VALUES ($1,$2,$3,$4,0,$5) RETURNING id`,
-		login, email, hash, role, now,
-	).Scan(&id)
-	if err != nil {
-		return nil, err
-	}
-	return GetUserByID(d, id)
-}
-
-func GetUserByLogin(d *Database, login string) (*User, error) {
-	row := d.QueryRow(
-		`SELECT id,login,email,password_hash,role,disabled,created_at FROM users WHERE login=$1`,
-		login,
-	)
-	return scanUser(row)
-}
-
-func GetUserByID(d *Database, id int64) (*User, error) {
-	row := d.QueryRow(
-		`SELECT id,login,email,password_hash,role,disabled,created_at FROM users WHERE id=$1`,
-		id,
-	)
-	return scanUser(row)
-}
-
-func ListUsers(d *Database) ([]User, error) {
-	rows, err := d.Query(`SELECT id,login,email,password_hash,role,disabled,created_at FROM users ORDER BY id`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []User
-	for rows.Next() {
-		u, err := scanUserRows(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, *u)
-	}
-	return out, rows.Err()
-}
-
-func UpdateUser(d *Database, id int64, disabled *bool, role *string) (*User, error) {
-	if _, err := GetUserByID(d, id); err != nil {
-		return nil, err
-	}
-	if disabled != nil {
-		dis := 0
-		if *disabled {
-			dis = 1
-		}
-		if _, e := d.Exec(`UPDATE users SET disabled=$1 WHERE id=$2`, dis, id); e != nil {
-			return nil, e
-		}
-	}
-	if role != nil && *role != "" {
-		if _, e := d.Exec(`UPDATE users SET role=$1 WHERE id=$2`, *role, id); e != nil {
-			return nil, e
-		}
-	}
-	return GetUserByID(d, id)
-}
-
-func DeleteUser(d *Database, id int64) error {
-	_, err := d.Exec(`DELETE FROM users WHERE id=$1`, id)
-	return err
-}
-
-type scanner interface {
-	Scan(dest ...any) error
-}
-
-func scanUser(row scanner) (*User, error) {
-	var u User
-	var created string
-	var dis int
-	err := row.Scan(&u.ID, &u.Login, &u.Email, &u.PasswordHash, &u.Role, &dis, &created)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, err
-	}
-	if err != nil {
-		return nil, err
-	}
-	u.Disabled = dis != 0
-	u.CreatedAt, _ = time.Parse(time.RFC3339, created)
-	return &u, nil
-}
-
-func scanUserRows(rows *sql.Rows) (*User, error) {
-	var u User
-	var created string
-	var dis int
-	err := rows.Scan(&u.ID, &u.Login, &u.Email, &u.PasswordHash, &u.Role, &dis, &created)
-	if err != nil {
-		return nil, err
-	}
-	u.Disabled = dis != 0
-	u.CreatedAt, _ = time.Parse(time.RFC3339, created)
-	return &u, nil
 }

@@ -7,17 +7,16 @@ import (
 	"strings"
 )
 
-// ProviderClient dispatches chat requests to the provider selected by groupSlug.
+// ProviderClient dispatches chat requests to the selected provider.
 type ProviderClient struct {
 	Ollama    *OllamaClient
 	Anthropic *AnthropicClient
 }
 
-// NewProviderClientFromEnv creates provider clients using environment defaults.
-func NewProviderClientFromEnv() *ProviderClient {
+func NewProviderClient(anthropicBaseURL, ollamaBaseURL string) *ProviderClient {
 	return &ProviderClient{
-		Ollama:    NewOllamaClientFromEnv(),
-		Anthropic: NewAnthropicClientFromEnv(),
+		Ollama:    NewOllamaClient(ollamaBaseURL),
+		Anthropic: NewAnthropicClient(anthropicBaseURL),
 	}
 }
 
@@ -26,13 +25,13 @@ func (c *ProviderClient) Chat(ctx context.Context, req ChatRequest) (string, err
 	case "ollama":
 		client := c.Ollama
 		if client == nil {
-			client = NewOllamaClientFromEnv()
+			client = NewOllamaClient("")
 		}
 		return client.Chat(ctx, req)
 	case "anthropic":
 		client := c.Anthropic
 		if client == nil {
-			client = NewAnthropicClientFromEnv()
+			client = NewAnthropicClient("")
 		}
 		return client.Chat(ctx, req)
 	default:

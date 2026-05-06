@@ -1,0 +1,9 @@
+package: apigen
+output: internal/http/generated/api.gen.go
+generate:
+  models: true
+  chi-server: true
+  embedded-spec: true
+  strict-server: false
+output-options:
+  skip-prune: true

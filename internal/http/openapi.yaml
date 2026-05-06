@@ -1,0 +1,817 @@
+openapi: 3.0.3
+info:
+  title: Old Whale API
+  version: 2.0.0
+  description: |
+    HTTP JSON API for Old Whale. PostgreSQL is the single persistence backend.
+    Entity identifiers are UUIDs. AI provider keys are referenced by environment
+    variable name only; key values are never returned by this API.
+servers:
+  - url: /
+tags:
+  - name: Health
+  - name: Auth
+  - name: Me
+  - name: AiModels
+  - name: Admin
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      operationId: getHealth
+      responses:
+        "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/HealthOK" } } } }
+        "503": { description: Unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      operationId: postAuthRegister
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterRequest" }
+      responses:
+        "200": { description: Registered, content: { application/json: { schema: { $ref: "#/components/schemas/AuthTokenResponse" } } } }
+        "400": { description: Invalid request, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: Conflict, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      operationId: postAuthLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginRequest" }
+      responses:
+        "200": { description: Logged in, content: { application/json: { schema: { $ref: "#/components/schemas/AuthTokenResponse" } } } }
+        "400": { description: Invalid request, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Forbidden, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/me:
+    get:
+      tags: [Me]
+      operationId: getMe
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200": { description: Current user, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
+        "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/ai/models:
+    get:
+      tags: [AiModels]
+      operationId: getPublicAIModels
+      security: [{}, { BearerAuth: [] }]
+      responses:
+        "200": { description: Catalog, content: { application/json: { schema: { $ref: "#/components/schemas/AiCatalogPublicResponse" } } } }
+
+  /api/ai/chat:
+    post:
+      tags: [AiModels]
+      operationId: postAiChat
+      security: [{}, { BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AiChatRequest" }
+      responses:
+        "202": { description: Accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AiChatAcceptedResponse" } } } }
+        "400": { description: Invalid request, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "502": { description: Upstream unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/ai/chat/events:
+    get:
+      tags: [AiModels]
+      operationId: getAiChatEvents
+      parameters:
+        - name: request_uid
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200": { description: SSE stream, content: { text/event-stream: { schema: { type: string } } } }
+        "400": { description: Invalid request, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/admin/ai/chat-logs:
+    get:
+      tags: [AiModels]
+      operationId: getAdminAIChatLogs
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - name: offset
+          in: query
+          schema: { type: integer, minimum: 0, default: 0 }
+        - name: uid
+          in: query
+          schema: { type: string, format: uuid }
+        - name: from
+          in: query
+          schema: { type: string, format: date-time }
+        - name: to
+          in: query
+          schema: { type: string, format: date-time }
+        - name: user_uid
+          in: query
+          schema: { type: string, format: uuid }
+        - name: group_uid
+          in: query
+          schema: { type: string, format: uuid }
+        - name: variant_uid
+          in: query
+          schema: { type: string, format: uuid }
+        - name: message_contains
+          in: query
+          schema: { type: string }
+        - name: reply_contains
+          in: query
+          schema: { type: string }
+        - name: user_message_uid
+          in: query
+          schema: { type: string, format: uuid }
+        - name: assistant_message_uid
+          in: query
+          schema: { type: string, format: uuid }
+        - name: client_ip
+          in: query
+          schema: { type: string }
+        - name: user_agent
+          in: query
+          schema: { type: string }
+        - name: username_contains
+          in: query
+          schema: { type: string }
+        - name: email_contains
+          in: query
+          schema: { type: string }
+        - name: editor_mode
+          in: query
+          schema: { $ref: "#/components/schemas/EditorMode" }
+      responses:
+        "200": { description: Chat logs, content: { application/json: { schema: { $ref: "#/components/schemas/AiChatLogListResponse" } } } }
+        "400": { description: Bad filter, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Forbidden, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/admin/me/ui-settings:
+    get:
+      tags: [Admin]
+      operationId: getAdminMeUiSettings
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200": { description: UI settings, content: { application/json: { schema: { $ref: "#/components/schemas/AdminUiSettingsResponse" } } } }
+    put:
+      tags: [Admin]
+      operationId: putAdminMeUiSettings
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminUiSettingsPutRequest" }
+      responses:
+        "200": { description: UI settings, content: { application/json: { schema: { $ref: "#/components/schemas/AdminUiSettingsResponse" } } } }
+        "400": { description: Invalid request, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/admin/ai/env-check:
+    post:
+      tags: [AiModels]
+      operationId: postAdminAiEnvCheck
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminEnvCheckRequest" }
+      responses:
+        "200": { description: Check result, content: { application/json: { schema: { $ref: "#/components/schemas/AdminEnvCheckResponse" } } } }
+        "400": { description: Invalid request, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/admin/ai/model-providers:
+    get:
+      tags: [AiModels]
+      operationId: getAdminAIModelProviders
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200": { description: Provider catalog, content: { application/json: { schema: { $ref: "#/components/schemas/AiModelProviderListResponse" } } } }
+
+  /api/admin/ai/groups:
+    get:
+      tags: [AiModels]
+      operationId: getAdminAIGroups
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200": { description: Groups, content: { application/json: { schema: { $ref: "#/components/schemas/AiGroupListAdminResponse" } } } }
+    post:
+      tags: [AiModels]
+      operationId: postAdminAIGroup
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AiGroupCreateRequest" }
+      responses:
+        "200": { description: Group, content: { application/json: { schema: { $ref: "#/components/schemas/AiGroupWrapResponse" } } } }
+        "400": { description: Invalid request, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: Conflict, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/admin/ai/groups/order:
+    put:
+      tags: [AiModels]
+      operationId: putAdminAIGroupsOrder
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AiReorderRequest" }
+      responses:
+        "204": { description: Reordered }
+        "400": { description: Invalid request, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/admin/ai/groups/{uid}:
+    parameters:
+      - name: uid
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [AiModels]
+      operationId: patchAdminAIGroup
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AiGroupPatchRequest" }
+      responses:
+        "200": { description: Group, content: { application/json: { schema: { $ref: "#/components/schemas/AiGroupWrapResponse" } } } }
+        "404": { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: Conflict, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    delete:
+      tags: [AiModels]
+      operationId: deleteAdminAIGroup
+      security: [{ BearerAuth: [] }]
+      responses:
+        "204": { description: Soft-deleted }
+        "404": { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/admin/ai/groups/{uid}/models/import:
+    parameters:
+      - name: uid
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [AiModels]
+      operationId: postAdminAIGroupModelsImport
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AiModelsImportRequest" }
+      responses:
+        "200": { description: Import result, content: { application/json: { schema: { $ref: "#/components/schemas/AiModelsImportResponse" } } } }
+        "400": { description: Invalid request, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "502": { description: Provider error, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/admin/ai/groups/{uid}/variants:
+    parameters:
+      - name: uid
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      tags: [AiModels]
+      operationId: postAdminAIVariant
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AiVariantCreateRequest" }
+      responses:
+        "200": { description: Variant, content: { application/json: { schema: { $ref: "#/components/schemas/AiVariantWrapResponse" } } } }
+
+  /api/admin/ai/groups/{uid}/variants/order:
+    parameters:
+      - name: uid
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    put:
+      tags: [AiModels]
+      operationId: putAdminAIVariantsOrder
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AiReorderRequest" }
+      responses:
+        "204": { description: Reordered }
+
+  /api/admin/ai/variants/{uid}:
+    parameters:
+      - name: uid
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [AiModels]
+      operationId: patchAdminAIVariant
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AiVariantPatchRequest" }
+      responses:
+        "200": { description: Variant, content: { application/json: { schema: { $ref: "#/components/schemas/AiVariantWrapResponse" } } } }
+    delete:
+      tags: [AiModels]
+      operationId: deleteAdminAIVariant
+      security: [{ BearerAuth: [] }]
+      responses:
+        "204": { description: Soft-deleted }
+
+  /api/admin/users:
+    get:
+      tags: [Admin]
+      operationId: getAdminUsers
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200": { description: Users, content: { application/json: { schema: { $ref: "#/components/schemas/UserListResponse" } } } }
+    post:
+      tags: [Admin]
+      operationId: postAdminUsers
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AdminCreateUserRequest" }
+      responses:
+        "200": { description: User, content: { application/json: { schema: { $ref: "#/components/schemas/UserWrapResponse" } } } }
+        "409": { description: Conflict, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/admin/users/{uid}:
+    parameters:
+      - name: uid
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      tags: [Admin]
+      operationId: patchAdminUser
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PatchUserRequest" }
+      responses:
+        "200": { description: User, content: { application/json: { schema: { $ref: "#/components/schemas/UserWrapResponse" } } } }
+    delete:
+      tags: [Admin]
+      operationId: deleteAdminUser
+      security: [{ BearerAuth: [] }]
+      responses:
+        "204": { description: Deleted }
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+
+    HealthOK:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, example: ok }
+
+    UID:
+      type: string
+      format: uuid
+
+    DateTime:
+      type: string
+      format: date-time
+
+    UserRole:
+      type: string
+      enum: [user, admin]
+
+    EditorMode:
+      type: string
+      enum: [note, media, short, play, film]
+
+    User:
+      type: object
+      required: [uid, username, email, role, disabled, created_at, updated_at]
+      properties:
+        uid: { $ref: "#/components/schemas/UID" }
+        username: { type: string }
+        email: { type: string, format: email }
+        role: { $ref: "#/components/schemas/UserRole" }
+        disabled: { type: boolean }
+        last_login_at: { type: string, format: date-time, nullable: true }
+        created_at: { $ref: "#/components/schemas/DateTime" }
+        updated_at: { $ref: "#/components/schemas/DateTime" }
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username: { type: string }
+        password: { type: string }
+
+    RegisterRequest:
+      type: object
+      required: [username, email, password]
+      properties:
+        username: { type: string, minLength: 2 }
+        email: { type: string, format: email }
+        password: { type: string, minLength: 6 }
+
+    AdminCreateUserRequest:
+      type: object
+      required: [username, email, password]
+      properties:
+        username: { type: string, minLength: 2 }
+        email: { type: string, format: email }
+        password: { type: string, minLength: 4 }
+        role: { $ref: "#/components/schemas/UserRole" }
+
+    PatchUserRequest:
+      type: object
+      properties:
+        disabled: { type: boolean }
+        role: { $ref: "#/components/schemas/UserRole" }
+
+    AuthTokenResponse:
+      type: object
+      required: [token, user]
+      properties:
+        token: { type: string }
+        user: { $ref: "#/components/schemas/User" }
+
+    UserWrapResponse:
+      type: object
+      required: [user]
+      properties:
+        user: { $ref: "#/components/schemas/User" }
+
+    UserListResponse:
+      type: object
+      required: [users]
+      properties:
+        users:
+          type: array
+          items: { $ref: "#/components/schemas/User" }
+
+    AiVariantPublic:
+      type: object
+      required: [uid, slug, label, is_default, created_at, updated_at]
+      properties:
+        uid: { $ref: "#/components/schemas/UID" }
+        slug: { type: string }
+        label: { type: string }
+        is_default: { type: boolean }
+        created_at: { $ref: "#/components/schemas/DateTime" }
+        updated_at: { $ref: "#/components/schemas/DateTime" }
+
+    AiGroupPublic:
+      type: object
+      required: [uid, slug, label, role, color, free, variants, created_at, updated_at]
+      properties:
+        uid: { $ref: "#/components/schemas/UID" }
+        slug: { type: string }
+        label: { type: string }
+        role: { type: string }
+        color: { type: string }
+        free: { type: boolean }
+        variants:
+          type: array
+          items: { $ref: "#/components/schemas/AiVariantPublic" }
+        created_at: { $ref: "#/components/schemas/DateTime" }
+        updated_at: { $ref: "#/components/schemas/DateTime" }
+
+    AiCatalogPublicResponse:
+      type: object
+      required: [groups]
+      properties:
+        groups:
+          type: array
+          items: { $ref: "#/components/schemas/AiGroupPublic" }
+
+    AiChatRole:
+      type: string
+      enum: [user, ai, sys]
+
+    AiChatConversationMessage:
+      type: object
+      required: [id, role, text]
+      properties:
+        id: { type: string }
+        role: { $ref: "#/components/schemas/AiChatRole" }
+        text: { type: string }
+        model: { type: string }
+        modelVariant: { type: string }
+
+    AiChatNoteContextRequest:
+      type: object
+      required: [conversationHistory, workfieldHtml]
+      properties:
+        conversationHistory:
+          type: array
+          items: { $ref: "#/components/schemas/AiChatConversationMessage" }
+        workfieldHtml: { type: string }
+
+    AiChatRequest:
+      type: object
+      required: [message, group_uid, variant_uid]
+      properties:
+        message: { type: string }
+        group_uid: { $ref: "#/components/schemas/UID" }
+        variant_uid: { $ref: "#/components/schemas/UID" }
+        editor_mode: { $ref: "#/components/schemas/EditorMode" }
+        note_context: { $ref: "#/components/schemas/AiChatNoteContextRequest" }
+
+    AiChatAcceptedResponse:
+      type: object
+      required: [request_uid, user_message_uid, assistant_message_uid]
+      properties:
+        request_uid: { $ref: "#/components/schemas/UID" }
+        user_message_uid: { $ref: "#/components/schemas/UID" }
+        assistant_message_uid: { $ref: "#/components/schemas/UID" }
+
+    AiChatResponse:
+      type: object
+      required: [reply, user_message_uid, assistant_message_uid]
+      properties:
+        reply: { type: string }
+        user_message_uid: { $ref: "#/components/schemas/UID" }
+        assistant_message_uid: { $ref: "#/components/schemas/UID" }
+
+    AiChatLogUser:
+      type: object
+      required: [uid, username, email]
+      properties:
+        uid: { $ref: "#/components/schemas/UID" }
+        username: { type: string }
+        email: { type: string }
+
+    AiGroupRefJoin:
+      type: object
+      required: [uid, slug, label]
+      properties:
+        uid: { $ref: "#/components/schemas/UID" }
+        slug: { type: string }
+        label: { type: string }
+        deleted_at: { type: string, format: date-time, nullable: true }
+
+    AiVariantRefJoin:
+      type: object
+      required: [uid, slug, label]
+      properties:
+        uid: { $ref: "#/components/schemas/UID" }
+        slug: { type: string }
+        label: { type: string }
+        deleted_at: { type: string, format: date-time, nullable: true }
+
+    AiChatLogItem:
+      type: object
+      required: [uid, created_at, message, reply, user_message_uid, assistant_message_uid, editor_mode]
+      properties:
+        uid: { $ref: "#/components/schemas/UID" }
+        created_at: { $ref: "#/components/schemas/DateTime" }
+        user_uid: { type: string, format: uuid, nullable: true }
+        group_uid: { type: string, format: uuid, nullable: true }
+        variant_uid: { type: string, format: uuid, nullable: true }
+        message: { type: string }
+        reply: { type: string }
+        user_message_uid: { $ref: "#/components/schemas/UID" }
+        assistant_message_uid: { $ref: "#/components/schemas/UID" }
+        client_ip: { type: string, nullable: true }
+        user_agent: { type: string, nullable: true }
+        editor_mode: { $ref: "#/components/schemas/EditorMode" }
+        note_context:
+          nullable: true
+          type: object
+          additionalProperties: true
+        user:
+          nullable: true
+          $ref: "#/components/schemas/AiChatLogUser"
+        group:
+          nullable: true
+          $ref: "#/components/schemas/AiGroupRefJoin"
+        variant:
+          nullable: true
+          $ref: "#/components/schemas/AiVariantRefJoin"
+
+    AiChatLogColumnKey:
+      type: string
+      enum: [uid, time, user, message, reply, model, message_ids, ip_ua, editor_mode, note_context]
+
+    AiChatLogTableSettings:
+      type: object
+      required: [columns]
+      properties:
+        columns:
+          type: object
+          additionalProperties: { type: boolean }
+        updated_at: { type: string, format: date-time, nullable: true }
+
+    AdminUiSettingsResponse:
+      type: object
+      required: [aiChatLogTable]
+      properties:
+        aiChatLogTable: { $ref: "#/components/schemas/AiChatLogTableSettings" }
+
+    AdminUiSettingsPutRequest:
+      type: object
+      required: [aiChatLogTable]
+      properties:
+        aiChatLogTable:
+          type: object
+          required: [columns]
+          properties:
+            columns:
+              type: object
+              additionalProperties: { type: boolean }
+
+    AiChatLogListResponse:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AiChatLogItem" }
+        total: { type: integer, minimum: 0 }
+
+    AiVariantAdmin:
+      type: object
+      required: [uid, group_uid, slug, label, is_default, position, created_at, updated_at]
+      properties:
+        uid: { $ref: "#/components/schemas/UID" }
+        group_uid: { $ref: "#/components/schemas/UID" }
+        slug: { type: string }
+        label: { type: string }
+        is_default: { type: boolean }
+        position: { type: integer }
+        deleted_at: { type: string, format: date-time, nullable: true }
+        created_at: { $ref: "#/components/schemas/DateTime" }
+        updated_at: { $ref: "#/components/schemas/DateTime" }
+
+    AiGroupAdmin:
+      type: object
+      required: [uid, slug, label, role, color, free, position, api_key_env_var, api_key_present, created_at, updated_at, variants]
+      properties:
+        uid: { $ref: "#/components/schemas/UID" }
+        slug: { type: string }
+        label: { type: string }
+        role: { type: string }
+        color: { type: string }
+        free: { type: boolean }
+        position: { type: integer }
+        api_key_env_var: { type: string }
+        api_key_present: { type: boolean }
+        deleted_at: { type: string, format: date-time, nullable: true }
+        created_at: { $ref: "#/components/schemas/DateTime" }
+        updated_at: { $ref: "#/components/schemas/DateTime" }
+        variants:
+          type: array
+          items: { $ref: "#/components/schemas/AiVariantAdmin" }
+
+    AiGroupListAdminResponse:
+      type: object
+      required: [groups]
+      properties:
+        groups:
+          type: array
+          items: { $ref: "#/components/schemas/AiGroupAdmin" }
+
+    AiGroupWrapResponse:
+      type: object
+      required: [group]
+      properties:
+        group: { $ref: "#/components/schemas/AiGroupAdmin" }
+
+    AiVariantWrapResponse:
+      type: object
+      required: [variant]
+      properties:
+        variant: { $ref: "#/components/schemas/AiVariantAdmin" }
+
+    AiReorderRequest:
+      type: object
+      required: [uids]
+      properties:
+        uids:
+          type: array
+          items: { $ref: "#/components/schemas/UID" }
+
+    AdminEnvCheckRequest:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string }
+
+    AdminEnvCheckResponse:
+      type: object
+      required: [name, present]
+      properties:
+        name: { type: string }
+        present: { type: boolean }
+
+    AiModelProvider:
+      type: object
+      required: [id, label, modelsUrl]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        modelsUrl: { type: string, format: uri }
+
+    AiModelProviderListResponse:
+      type: object
+      required: [providers]
+      properties:
+        providers:
+          type: array
+          items: { $ref: "#/components/schemas/AiModelProvider" }
+
+    AiModelsImportRequest:
+      type: object
+      required: [providerId, modelsUrl, envVarName]
+      properties:
+        providerId: { type: string }
+        modelsUrl: { type: string, format: uri }
+        envVarName: { type: string }
+
+    AiModelsImportResponse:
+      type: object
+      required: [group, imported, modelsUrl]
+      properties:
+        group: { $ref: "#/components/schemas/AiGroupAdmin" }
+        imported: { type: integer, minimum: 0 }
+        modelsUrl: { type: string, format: uri }
+
+    AiGroupCreateRequest:
+      type: object
+      required: [slug, label]
+      properties:
+        slug: { type: string }
+        label: { type: string }
+        role: { type: string }
+        color: { type: string }
+        free: { type: boolean }
+        position: { type: integer }
+        api_key_env_var: { type: string }
+
+    AiGroupPatchRequest:
+      type: object
+      properties:
+        slug: { type: string }
+        label: { type: string }
+        role: { type: string }
+        color: { type: string }
+        free: { type: boolean }
+        position: { type: integer }
+        api_key_env_var: { type: string }
+
+    AiVariantCreateRequest:
+      type: object
+      required: [slug]
+      properties:
+        slug: { type: string }
+        label: { type: string }
+        is_default: { type: boolean }
+        position: { type: integer }
+
+    AiVariantPatchRequest:
+      type: object
+      properties:
+        slug: { type: string }
+        label: { type: string }
+        is_default: { type: boolean }
+        position: { type: integer }

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 )
 
@@ -41,16 +40,11 @@ type Client interface {
 // OllamaClient calls the Ollama chat API.
 type OllamaClient struct {
 	BaseURL    string
-	APIKey     string
 	HTTPClient *http.Client
 }
 
-// NewOllamaClientFromEnv creates an Ollama client using optional environment overrides.
-func NewOllamaClientFromEnv() *OllamaClient {
-	return &OllamaClient{
-		BaseURL: strings.TrimSpace(os.Getenv("OLLAMA_BASE_URL")),
-		APIKey:  strings.TrimSpace(os.Getenv("OLLAMA_API_KEY")),
-	}
+func NewOllamaClient(baseURL string) *OllamaClient {
+	return &OllamaClient{BaseURL: strings.TrimSpace(baseURL)}
 }
 
 func (c *OllamaClient) Chat(ctx context.Context, req ChatRequest) (string, error) {
@@ -79,7 +73,7 @@ func (c *OllamaClient) Chat(ctx context.Context, req ChatRequest) (string, error
 		return "", err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	apiKey := resolveSecret(req.APIKey, c.APIKey)
+	apiKey := strings.TrimSpace(req.APIKey)
 	if apiKey != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
 	}

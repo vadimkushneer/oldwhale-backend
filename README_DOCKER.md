@@ -20,7 +20,7 @@ flowchart TB
 ```
 
 1. **PostgreSQL** runs in its own container (`db` in [docker-compose.yml](docker-compose.yml)) with a persistent volume so data survives restarts.
-2. **API** runs in a second container (`api`), built from the [Dockerfile](Dockerfile). On startup it reads **`DATABASE_URL`** and opens a single pool to that Postgres (see [internal/db/db.go](internal/db/db.go)).
+2. **API** runs in a second container (`api`), built from the [Dockerfile](Dockerfile). On startup it reads **`DATABASE_URL`**, opens a pgx pool, and applies [internal/schema/schema.sql](internal/schema/schema.sql).
 3. **`depends_on` + `healthcheck`** delay starting the API until Postgres accepts connections, so the first migration/seed does not race a cold database.
 
 ---
@@ -34,6 +34,14 @@ From the `oldwhale-backend` directory:
 ```bash
 docker compose up --build
 ```
+
+When **`api`** is listening on **localhost:8080**, smoke-test JSON endpoints and auth:
+
+```bash
+./scripts/docker-curl-checks.sh
+```
+
+See [README.md — Smoke-test the stack](README.md#smoke-test-the-stack-curl) for variables (**`BASE_URL`**, **`ADMIN_USERNAME`**, **`ADMIN_PASSWORD`**) and prerequisites (**curl**, **jq** or **python3**).
 
 ### Full stack: API + Postgres + frontend (monorepo root)
 
@@ -88,6 +96,8 @@ If Postgres is already reachable (for example `db` exposed on `5432` after `dock
 ```bash
 export DATABASE_URL='postgres://ow:owlocal@127.0.0.1:5432/ow?sslmode=disable'
 export JWT_SECRET='at-least-sixteen-chars!!'
+export ADMIN_USERNAME='admin'
+export ADMIN_PASSWORD='admin123'
 go run ./cmd/server
 ```
 
@@ -118,7 +128,7 @@ In **App Platform → Settings → Components → your web service**:
 | **`JWT_SECRET`** | 16+ random characters. |
 | **`CORS_ORIGIN`** | Your frontend origin, e.g. `https://youruser.github.io`. |
 
-Optional: `ADMIN_*` for first-time admin seed when the `users` table is empty.
+Required for first-time admin seed when the `users` table is empty: `ADMIN_USERNAME` and `ADMIN_PASSWORD`; `ADMIN_EMAIL` is optional. Set `RESET_SCHEMA_ON_START=true` only for disposable environments where startup should drop and recreate tables.
 
 ### 4. Push
 
@@ -132,9 +142,11 @@ You can keep **buildpack + Procfile**, but the running process is still **Postgr
 
 ## Image contents
 
-- **Multi-stage build:** compile with `golang:1.24-alpine`, run a minimal **Alpine** image with **CA certificates** (for TLS to managed Postgres).
+- **Multi-stage build:** compile with `golang:1.26-alpine`, run a minimal **Alpine** image with **CA certificates** (for TLS to managed Postgres).
 - **Non-root user:** `nobody`.
 - **No database inside the API image:** only the Go binary; all persistence is in the separate Postgres service.
+- **Generated code is committed:** Docker builds do not run sqlc or oapi-codegen; run `make generate` locally before building if the schema or OpenAPI contract changes.
+- **Provider secrets:** AI catalog rows store env var names such as `ANTHROPIC_API_KEY`. The key value stays in container env and admin diagnostics use `/api/admin/ai/env-check`, which returns only whether it is present.
 
 ---
 

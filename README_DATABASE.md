@@ -6,11 +6,11 @@ The API uses **PostgreSQL only** via **`DATABASE_URL`**. There is no SQLite or f
 
 ## How it works
 
-1. On startup, `cmd/server` calls `db.OpenFromEnv()` ([internal/db/db.go](internal/db/db.go)).
+1. On startup, `cmd/server` loads config, opens a pgx pool, and applies [internal/schema/schema.sql](internal/schema/schema.sql).
 2. If **`DATABASE_URL`** is missing or blank, the process **exits** with an error (no silent fallback).
-3. If set, the app opens **`pgx`** (`github.com/jackc/pgx/v5/stdlib`), runs migrations (`CREATE TABLE IF NOT EXISTS users …`), and serves HTTP.
+3. If set, the app opens **`pgxpool`**, applies the schema, seeds the admin user and default AI catalog, and serves HTTP.
 
-The first time the **`users`** table is empty, **admin seeding** runs using `ADMIN_LOGIN`, `ADMIN_PASSWORD`, `ADMIN_EMAIL` (see `.env.example`).
+The first time the **`users`** table is empty, **admin seeding** runs using required `ADMIN_USERNAME`, required `ADMIN_PASSWORD`, and optional `ADMIN_EMAIL` (see `.env.example`).
 
 ---
 
@@ -21,7 +21,8 @@ The first time the **`users`** table is empty, **admin seeding** runs using `ADM
 | **`DATABASE_URL`** | **Yes** | PostgreSQL URI, e.g. `postgres://user:pass@host:5432/dbname?sslmode=require` |
 | **`JWT_SECRET`** | Strongly recommended (16+ chars) | JWT signing key |
 | **`CORS_ORIGIN`** | No | Single allowed browser `Origin`. If unset, `Access-Control-Allow-Origin: *` |
-| **`ADMIN_LOGIN`**, **`ADMIN_PASSWORD`**, **`ADMIN_EMAIL`** | No | First admin when DB has zero users |
+| **`ADMIN_USERNAME`**, **`ADMIN_PASSWORD`**, **`ADMIN_EMAIL`** | Username/password required | First admin when DB has zero users |
+| **`RESET_SCHEMA_ON_START`** | No | When `true`, drops disposable tables and reapplies `internal/schema/schema.sql` on startup |
 | **`PORT`** | Set by many hosts | Listen on `:$PORT` when **`HTTP_ADDR`** is unset |
 | **`HTTP_ADDR`** | No | If set, overrides **`PORT`** for the listen address |
 
@@ -80,8 +81,10 @@ If you deploy **without** Docker and use the Go buildpack:
 ## Operations
 
 - **Backups:** use your provider’s managed Postgres backups.  
-- **Connection pool:** `SetMaxOpenConns(10)` by default ([internal/db/db.go](internal/db/db.go)).  
-- **Migrations:** applied at startup (`CREATE IF NOT EXISTS`); no separate CLI.  
+- **Connection pool:** pgxpool with max 25 conns and 30s statement timeout.  
+- **Schema:** [internal/schema/schema.sql](internal/schema/schema.sql) is applied at startup; no migrations tool.  
+- **Codegen:** `make generate` regenerates committed sqlc output in `internal/db/generated`.  
+- **AI provider keys:** catalog rows store env var names (`api_key_env_var`) only; key values are read from process env immediately before upstream calls and are never returned by API endpoints.  
 - **Health:** `GET /health` uses `Ping()` on the pool.
 
 ---

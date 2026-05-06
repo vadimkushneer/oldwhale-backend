@@ -43,7 +43,7 @@ func TestOllamaClientChatUsesModelMessagesAndAuth(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := &OllamaClient{BaseURL: ts.URL, APIKey: "env-key", HTTPClient: ts.Client()}
+	client := &OllamaClient{BaseURL: ts.URL, HTTPClient: ts.Client()}
 	reply, err := client.Chat(context.Background(), ChatRequest{
 		Model:         "llama3.2",
 		APIKey:        "group-key",
@@ -64,7 +64,6 @@ func TestOllamaClientChatUsesModelMessagesAndAuth(t *testing.T) {
 }
 
 func TestAnthropicClientChatUsesModelMessagesAndAuth(t *testing.T) {
-	t.Setenv("ANTHROPIC_API_KEY_TEST", "resolved-group-key")
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/messages" {
 			t.Fatalf("path = %q", r.URL.Path)
@@ -101,10 +100,10 @@ func TestAnthropicClientChatUsesModelMessagesAndAuth(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	client := &AnthropicClient{BaseURL: ts.URL, APIKey: "env-key", HTTPClient: ts.Client()}
+	client := &AnthropicClient{BaseURL: ts.URL, HTTPClient: ts.Client()}
 	reply, err := client.Chat(context.Background(), ChatRequest{
 		Model:         "claude-3-5-sonnet-latest",
-		APIKey:        "ANTHROPIC_API_KEY_TEST",
+		APIKey:        "resolved-group-key",
 		Message:       "Write a poem",
 		EditorMode:    "note",
 		WorkfieldHTML: "<p>Draft</p>",

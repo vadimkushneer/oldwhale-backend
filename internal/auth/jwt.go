@@ -5,19 +5,20 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 type Claims struct {
-	UserID int64  `json:"uid"`
-	Role   string `json:"role"`
+	UserUID uuid.UUID `json:"uid"`
+	Role    string    `json:"role"`
 	jwt.RegisteredClaims
 }
 
-func SignJWT(secret []byte, userID int64, role string, ttl time.Duration) (string, error) {
+func SignJWT(secret []byte, userUID uuid.UUID, role string, ttl time.Duration) (string, error) {
 	now := time.Now()
 	c := Claims{
-		UserID: userID,
-		Role:   role,
+		UserUID: userUID,
+		Role:    role,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
 			IssuedAt:  jwt.NewNumericDate(now),
