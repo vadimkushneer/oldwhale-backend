@@ -289,7 +289,14 @@ func (h *Handlers) PostAdminAIVariant(w stdhttp.ResponseWriter, r *stdhttp.Reque
 		jsonErr(w, stdhttp.StatusBadRequest, "invalid json")
 		return
 	}
-	v, err := h.Catalog.CreateVariant(r.Context(), service.CreateVariantInput{GroupUID: uuid.UUID(uid), Slug: in.Slug, Label: strVal(in.Label), IsDefault: boolVal(in.IsDefault), Position: in.Position})
+	v, err := h.Catalog.CreateVariant(r.Context(), service.CreateVariantInput{
+		GroupUID:        uuid.UUID(uid),
+		Slug:            in.Slug,
+		ProviderModelID: in.ProviderModelId,
+		Label:           strVal(in.Label),
+		IsDefault:       boolVal(in.IsDefault),
+		Position:        in.Position,
+	})
 	if err != nil {
 		serviceErr(w, err)
 		return
@@ -306,7 +313,13 @@ func (h *Handlers) PatchAdminAIVariant(w stdhttp.ResponseWriter, r *stdhttp.Requ
 		jsonErr(w, stdhttp.StatusBadRequest, "invalid json")
 		return
 	}
-	v, err := h.Catalog.PatchVariant(r.Context(), uuid.UUID(uid), service.PatchVariantInput{Slug: in.Slug, Label: in.Label, IsDefault: in.IsDefault, Position: in.Position})
+	v, err := h.Catalog.PatchVariant(r.Context(), uuid.UUID(uid), service.PatchVariantInput{
+		Slug:              in.Slug,
+		ProviderModelID:   in.ProviderModelId,
+		Label:             in.Label,
+		IsDefault:         in.IsDefault,
+		Position:          in.Position,
+	})
 	if err != nil {
 		serviceErr(w, err)
 		return

@@ -47,16 +47,23 @@ CREATE TRIGGER trg_ai_groups_updated_at BEFORE UPDATE ON ai_model_groups
   FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 CREATE TABLE IF NOT EXISTS ai_model_variants (
-  uid         UUID         PRIMARY KEY,
-  group_uid   UUID         NOT NULL REFERENCES ai_model_groups(uid) ON DELETE CASCADE,
-  slug        TEXT         NOT NULL,
-  label       TEXT         NOT NULL DEFAULT '',
-  is_default  BOOLEAN      NOT NULL DEFAULT FALSE,
-  position    INTEGER      NOT NULL DEFAULT 0,
-  deleted_at  TIMESTAMPTZ,
-  created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
-  updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
+  uid                 UUID         PRIMARY KEY,
+  group_uid           UUID         NOT NULL REFERENCES ai_model_groups(uid) ON DELETE CASCADE,
+  slug                TEXT         NOT NULL,
+  provider_model_id   TEXT         NOT NULL,
+  label               TEXT         NOT NULL DEFAULT '',
+  is_default          BOOLEAN      NOT NULL DEFAULT FALSE,
+  position            INTEGER      NOT NULL DEFAULT 0,
+  deleted_at          TIMESTAMPTZ,
+  created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
+  updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
+
+-- Existing deployments: add column and backfill before enforcing semantics.
+ALTER TABLE ai_model_variants ADD COLUMN IF NOT EXISTS provider_model_id TEXT NOT NULL DEFAULT '';
+UPDATE ai_model_variants SET provider_model_id = slug WHERE provider_model_id = '';
+UPDATE ai_model_variants SET provider_model_id = 'qwen2.5:7b-instruct' WHERE slug = 'qwen2-5-7b-instruct';
+ALTER TABLE ai_model_variants ALTER COLUMN provider_model_id DROP DEFAULT;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_ai_variants_slug_active
   ON ai_model_variants(group_uid, slug) WHERE deleted_at IS NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_ai_variants_default_per_group_active

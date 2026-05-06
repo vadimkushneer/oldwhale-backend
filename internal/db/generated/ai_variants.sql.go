@@ -13,20 +13,21 @@ import (
 
 const createAIVariant = `-- name: CreateAIVariant :one
 INSERT INTO ai_model_variants (
-  uid, group_uid, slug, label, is_default, position
+  uid, group_uid, slug, provider_model_id, label, is_default, position
 ) VALUES (
-  $1, $2, $3, $4, $5, $6
+  $1, $2, $3, $4, $5, $6, $7
 )
-RETURNING uid, group_uid, slug, label, is_default, position, deleted_at, created_at, updated_at
+RETURNING uid, group_uid, slug, provider_model_id, label, is_default, position, deleted_at, created_at, updated_at
 `
 
 type CreateAIVariantParams struct {
-	Uid       uuid.UUID
-	GroupUid  uuid.UUID
-	Slug      string
-	Label     string
-	IsDefault bool
-	Position  int32
+	Uid             uuid.UUID
+	GroupUid        uuid.UUID
+	Slug            string
+	ProviderModelID string
+	Label           string
+	IsDefault       bool
+	Position        int32
 }
 
 func (q *Queries) CreateAIVariant(ctx context.Context, arg CreateAIVariantParams) (AiModelVariant, error) {
@@ -34,6 +35,7 @@ func (q *Queries) CreateAIVariant(ctx context.Context, arg CreateAIVariantParams
 		arg.Uid,
 		arg.GroupUid,
 		arg.Slug,
+		arg.ProviderModelID,
 		arg.Label,
 		arg.IsDefault,
 		arg.Position,
@@ -43,6 +45,7 @@ func (q *Queries) CreateAIVariant(ctx context.Context, arg CreateAIVariantParams
 		&i.Uid,
 		&i.GroupUid,
 		&i.Slug,
+		&i.ProviderModelID,
 		&i.Label,
 		&i.IsDefault,
 		&i.Position,
@@ -54,7 +57,7 @@ func (q *Queries) CreateAIVariant(ctx context.Context, arg CreateAIVariantParams
 }
 
 const getAIVariantByUID = `-- name: GetAIVariantByUID :one
-SELECT uid, group_uid, slug, label, is_default, position, deleted_at, created_at, updated_at FROM ai_model_variants
+SELECT uid, group_uid, slug, provider_model_id, label, is_default, position, deleted_at, created_at, updated_at FROM ai_model_variants
 WHERE uid = $1 AND deleted_at IS NULL
 `
 
@@ -65,6 +68,7 @@ func (q *Queries) GetAIVariantByUID(ctx context.Context, uid uuid.UUID) (AiModel
 		&i.Uid,
 		&i.GroupUid,
 		&i.Slug,
+		&i.ProviderModelID,
 		&i.Label,
 		&i.IsDefault,
 		&i.Position,
@@ -76,7 +80,7 @@ func (q *Queries) GetAIVariantByUID(ctx context.Context, uid uuid.UUID) (AiModel
 }
 
 const getAIVariantByUIDIncludingDeleted = `-- name: GetAIVariantByUIDIncludingDeleted :one
-SELECT uid, group_uid, slug, label, is_default, position, deleted_at, created_at, updated_at FROM ai_model_variants
+SELECT uid, group_uid, slug, provider_model_id, label, is_default, position, deleted_at, created_at, updated_at FROM ai_model_variants
 WHERE uid = $1
 `
 
@@ -87,6 +91,7 @@ func (q *Queries) GetAIVariantByUIDIncludingDeleted(ctx context.Context, uid uui
 		&i.Uid,
 		&i.GroupUid,
 		&i.Slug,
+		&i.ProviderModelID,
 		&i.Label,
 		&i.IsDefault,
 		&i.Position,
@@ -98,7 +103,7 @@ func (q *Queries) GetAIVariantByUIDIncludingDeleted(ctx context.Context, uid uui
 }
 
 const listAIVariantsByGroup = `-- name: ListAIVariantsByGroup :many
-SELECT uid, group_uid, slug, label, is_default, position, deleted_at, created_at, updated_at FROM ai_model_variants
+SELECT uid, group_uid, slug, provider_model_id, label, is_default, position, deleted_at, created_at, updated_at FROM ai_model_variants
 WHERE group_uid = $1
   AND deleted_at IS NULL
 ORDER BY position, uid
@@ -117,6 +122,7 @@ func (q *Queries) ListAIVariantsByGroup(ctx context.Context, groupUid uuid.UUID)
 			&i.Uid,
 			&i.GroupUid,
 			&i.Slug,
+			&i.ProviderModelID,
 			&i.Label,
 			&i.IsDefault,
 			&i.Position,
@@ -135,7 +141,7 @@ func (q *Queries) ListAIVariantsByGroup(ctx context.Context, groupUid uuid.UUID)
 }
 
 const listAIVariantsByGroupIncludingDeleted = `-- name: ListAIVariantsByGroupIncludingDeleted :many
-SELECT uid, group_uid, slug, label, is_default, position, deleted_at, created_at, updated_at FROM ai_model_variants
+SELECT uid, group_uid, slug, provider_model_id, label, is_default, position, deleted_at, created_at, updated_at FROM ai_model_variants
 WHERE group_uid = $1
 ORDER BY deleted_at NULLS FIRST, position, uid
 `
@@ -153,6 +159,7 @@ func (q *Queries) ListAIVariantsByGroupIncludingDeleted(ctx context.Context, gro
 			&i.Uid,
 			&i.GroupUid,
 			&i.Slug,
+			&i.ProviderModelID,
 			&i.Label,
 			&i.IsDefault,
 			&i.Position,
@@ -174,25 +181,28 @@ const patchAIVariant = `-- name: PatchAIVariant :one
 UPDATE ai_model_variants
 SET
   slug = COALESCE($1, slug),
-  label = COALESCE($2, label),
-  is_default = COALESCE($3, is_default),
-  position = COALESCE($4, position)
-WHERE uid = $5
+  provider_model_id = COALESCE($2, provider_model_id),
+  label = COALESCE($3, label),
+  is_default = COALESCE($4, is_default),
+  position = COALESCE($5, position)
+WHERE uid = $6
   AND deleted_at IS NULL
-RETURNING uid, group_uid, slug, label, is_default, position, deleted_at, created_at, updated_at
+RETURNING uid, group_uid, slug, provider_model_id, label, is_default, position, deleted_at, created_at, updated_at
 `
 
 type PatchAIVariantParams struct {
-	Slug      *string
-	Label     *string
-	IsDefault *bool
-	Position  *int32
-	Uid       uuid.UUID
+	Slug            *string
+	ProviderModelID *string
+	Label           *string
+	IsDefault       *bool
+	Position        *int32
+	Uid             uuid.UUID
 }
 
 func (q *Queries) PatchAIVariant(ctx context.Context, arg PatchAIVariantParams) (AiModelVariant, error) {
 	row := q.db.QueryRow(ctx, patchAIVariant,
 		arg.Slug,
+		arg.ProviderModelID,
 		arg.Label,
 		arg.IsDefault,
 		arg.Position,
@@ -203,6 +213,7 @@ func (q *Queries) PatchAIVariant(ctx context.Context, arg PatchAIVariantParams) 
 		&i.Uid,
 		&i.GroupUid,
 		&i.Slug,
+		&i.ProviderModelID,
 		&i.Label,
 		&i.IsDefault,
 		&i.Position,
@@ -267,7 +278,7 @@ UPDATE ai_model_variants
 SET deleted_at = now()
 WHERE uid = $1
   AND deleted_at IS NULL
-RETURNING uid, group_uid, slug, label, is_default, position, deleted_at, created_at, updated_at
+RETURNING uid, group_uid, slug, provider_model_id, label, is_default, position, deleted_at, created_at, updated_at
 `
 
 func (q *Queries) SoftDeleteAIVariant(ctx context.Context, uid uuid.UUID) (AiModelVariant, error) {
@@ -277,6 +288,7 @@ func (q *Queries) SoftDeleteAIVariant(ctx context.Context, uid uuid.UUID) (AiMod
 		&i.Uid,
 		&i.GroupUid,
 		&i.Slug,
+		&i.ProviderModelID,
 		&i.Label,
 		&i.IsDefault,
 		&i.Position,
@@ -289,24 +301,26 @@ func (q *Queries) SoftDeleteAIVariant(ctx context.Context, uid uuid.UUID) (AiMod
 
 const upsertAIVariantImport = `-- name: UpsertAIVariantImport :one
 INSERT INTO ai_model_variants (
-  uid, group_uid, slug, label, is_default, position
+  uid, group_uid, slug, provider_model_id, label, is_default, position
 ) VALUES (
-  $1, $2, $3, $4, $5, $6
+  $1, $2, $3, $4, $5, $6, $7
 )
 ON CONFLICT (group_uid, slug) WHERE deleted_at IS NULL
 DO UPDATE SET
   label = EXCLUDED.label,
-  position = EXCLUDED.position
-RETURNING uid, group_uid, slug, label, is_default, position, deleted_at, created_at, updated_at
+  position = EXCLUDED.position,
+  provider_model_id = EXCLUDED.provider_model_id
+RETURNING uid, group_uid, slug, provider_model_id, label, is_default, position, deleted_at, created_at, updated_at
 `
 
 type UpsertAIVariantImportParams struct {
-	Uid       uuid.UUID
-	GroupUid  uuid.UUID
-	Slug      string
-	Label     string
-	IsDefault bool
-	Position  int32
+	Uid             uuid.UUID
+	GroupUid        uuid.UUID
+	Slug            string
+	ProviderModelID string
+	Label           string
+	IsDefault       bool
+	Position        int32
 }
 
 func (q *Queries) UpsertAIVariantImport(ctx context.Context, arg UpsertAIVariantImportParams) (AiModelVariant, error) {
@@ -314,6 +328,7 @@ func (q *Queries) UpsertAIVariantImport(ctx context.Context, arg UpsertAIVariant
 		arg.Uid,
 		arg.GroupUid,
 		arg.Slug,
+		arg.ProviderModelID,
 		arg.Label,
 		arg.IsDefault,
 		arg.Position,
@@ -323,6 +338,7 @@ func (q *Queries) UpsertAIVariantImport(ctx context.Context, arg UpsertAIVariant
 		&i.Uid,
 		&i.GroupUid,
 		&i.Slug,
+		&i.ProviderModelID,
 		&i.Label,
 		&i.IsDefault,
 		&i.Position,

@@ -1,8 +1,8 @@
 -- name: CreateAIVariant :one
 INSERT INTO ai_model_variants (
-  uid, group_uid, slug, label, is_default, position
+  uid, group_uid, slug, provider_model_id, label, is_default, position
 ) VALUES (
-  $1, $2, $3, $4, $5, $6
+  $1, $2, $3, $4, $5, $6, $7
 )
 RETURNING *;
 
@@ -27,20 +27,22 @@ ORDER BY deleted_at NULLS FIRST, position, uid;
 
 -- name: UpsertAIVariantImport :one
 INSERT INTO ai_model_variants (
-  uid, group_uid, slug, label, is_default, position
+  uid, group_uid, slug, provider_model_id, label, is_default, position
 ) VALUES (
-  $1, $2, $3, $4, $5, $6
+  $1, $2, $3, $4, $5, $6, $7
 )
 ON CONFLICT (group_uid, slug) WHERE deleted_at IS NULL
 DO UPDATE SET
   label = EXCLUDED.label,
-  position = EXCLUDED.position
+  position = EXCLUDED.position,
+  provider_model_id = EXCLUDED.provider_model_id
 RETURNING *;
 
 -- name: PatchAIVariant :one
 UPDATE ai_model_variants
 SET
   slug = COALESCE(sqlc.narg(slug), slug),
+  provider_model_id = COALESCE(sqlc.narg(provider_model_id), provider_model_id),
   label = COALESCE(sqlc.narg(label), label),
   is_default = COALESCE(sqlc.narg(is_default), is_default),
   position = COALESCE(sqlc.narg(position), position)

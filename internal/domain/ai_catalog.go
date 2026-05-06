@@ -17,15 +17,17 @@ type AIModelGroup struct {
 
 type AIModelVariant struct {
 	Meta
-	GroupUID  UID
-	Slug      string
-	Label     string
-	IsDefault bool
-	Position  int
-	DeletedAt *time.Time
+	GroupUID          UID
+	Slug              string
+	ProviderModelID   string
+	Label             string
+	IsDefault         bool
+	Position          int
+	DeletedAt         *time.Time
 }
 
 type AIImportedVariant struct {
-	Slug  string
-	Label string
+	Slug            string
+	ProviderModelID string
+	Label           string
 }

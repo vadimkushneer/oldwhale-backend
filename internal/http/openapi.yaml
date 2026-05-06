@@ -500,6 +500,21 @@ components:
         created_at: { $ref: "#/components/schemas/DateTime" }
         updated_at: { $ref: "#/components/schemas/DateTime" }
 
+    AiVariantAdmin:
+      type: object
+      required: [uid, group_uid, slug, provider_model_id, label, is_default, position, created_at, updated_at]
+      properties:
+        uid: { $ref: "#/components/schemas/UID" }
+        group_uid: { $ref: "#/components/schemas/UID" }
+        slug: { type: string }
+        provider_model_id: { type: string }
+        label: { type: string }
+        is_default: { type: boolean }
+        position: { type: integer }
+        deleted_at: { type: string, format: date-time, nullable: true }
+        created_at: { $ref: "#/components/schemas/DateTime" }
+        updated_at: { $ref: "#/components/schemas/DateTime" }
+
     AiGroupPublic:
       type: object
       required: [uid, slug, label, role, color, free, variants, created_at, updated_at]
@@ -669,20 +684,6 @@ components:
           items: { $ref: "#/components/schemas/AiChatLogItem" }
         total: { type: integer, minimum: 0 }
 
-    AiVariantAdmin:
-      type: object
-      required: [uid, group_uid, slug, label, is_default, position, created_at, updated_at]
-      properties:
-        uid: { $ref: "#/components/schemas/UID" }
-        group_uid: { $ref: "#/components/schemas/UID" }
-        slug: { type: string }
-        label: { type: string }
-        is_default: { type: boolean }
-        position: { type: integer }
-        deleted_at: { type: string, format: date-time, nullable: true }
-        created_at: { $ref: "#/components/schemas/DateTime" }
-        updated_at: { $ref: "#/components/schemas/DateTime" }
-
     AiGroupAdmin:
       type: object
       required: [uid, slug, label, role, color, free, position, api_key_env_var, api_key_present, created_at, updated_at, variants]
@@ -801,9 +802,10 @@ components:
 
     AiVariantCreateRequest:
       type: object
-      required: [slug]
+      required: [slug, provider_model_id]
       properties:
         slug: { type: string }
+        provider_model_id: { type: string }
         label: { type: string }
         is_default: { type: boolean }
         position: { type: integer }
@@ -812,6 +814,7 @@ components:
       type: object
       properties:
         slug: { type: string }
+        provider_model_id: { type: string }
         label: { type: string }
         is_default: { type: boolean }
         position: { type: integer }

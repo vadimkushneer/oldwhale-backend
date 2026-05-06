@@ -128,3 +128,17 @@ func TestProviderClientDispatchesAnthropicAliases(t *testing.T) {
 		t.Fatalf("claude alias normalized to %q", NormalizeProvider("claude"))
 	}
 }
+
+func TestSupportsProviderOllamaSlugPrefixes(t *testing.T) {
+	for _, slug := range []string{"ollama", "ollama-local", "Ollama-Dev"} {
+		if !SupportsProvider(slug) {
+			t.Fatalf("SupportsProvider(%q) = false", slug)
+		}
+		if got := NormalizeProvider(slug); got != "ollama" {
+			t.Fatalf("NormalizeProvider(%q) = %q, want ollama", slug, got)
+		}
+	}
+	if SupportsProvider("not-ollama-really") {
+		t.Fatal("expected arbitrary slug with substring ollama to stay unsupported unless ollama-prefixed")
+	}
+}

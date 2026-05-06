@@ -38,13 +38,14 @@ func dbGroupToDomain(g dbgen.AiModelGroup) domain.AIModelGroup {
 
 func dbVariantToDomain(v dbgen.AiModelVariant) domain.AIModelVariant {
 	return domain.AIModelVariant{
-		Meta:      domain.Meta{UID: v.Uid, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt},
-		GroupUID:  v.GroupUid,
-		Slug:      v.Slug,
-		Label:     v.Label,
-		IsDefault: v.IsDefault,
-		Position:  int(v.Position),
-		DeletedAt: timePtr(v.DeletedAt),
+		Meta:            domain.Meta{UID: v.Uid, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt},
+		GroupUID:        v.GroupUid,
+		Slug:            v.Slug,
+		ProviderModelID: v.ProviderModelID,
+		Label:           v.Label,
+		IsDefault:       v.IsDefault,
+		Position:        int(v.Position),
+		DeletedAt:       timePtr(v.DeletedAt),
 	}
 }
 

@@ -25,15 +25,16 @@ func DomainToAPIUser(u domain.User) apigen.User {
 
 func DomainToAPIVariantAdmin(v domain.AIModelVariant) apigen.AiVariantAdmin {
 	return apigen.AiVariantAdmin{
-		Uid:       openapi_types.UUID(v.UID),
-		GroupUid:  openapi_types.UUID(v.GroupUID),
-		Slug:      v.Slug,
-		Label:     v.Label,
-		IsDefault: v.IsDefault,
-		Position:  v.Position,
-		DeletedAt: v.DeletedAt,
-		CreatedAt: v.CreatedAt,
-		UpdatedAt: v.UpdatedAt,
+		Uid:             openapi_types.UUID(v.UID),
+		GroupUid:        openapi_types.UUID(v.GroupUID),
+		Slug:            v.Slug,
+		ProviderModelId: v.ProviderModelID,
+		Label:           v.Label,
+		IsDefault:       v.IsDefault,
+		Position:        v.Position,
+		DeletedAt:       v.DeletedAt,
+		CreatedAt:       v.CreatedAt,
+		UpdatedAt:       v.UpdatedAt,
 	}
 }
 

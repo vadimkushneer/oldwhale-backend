@@ -57,18 +57,20 @@ type PatchGroupInput struct {
 }
 
 type CreateVariantInput struct {
-	GroupUID  uuid.UUID
-	Slug      string
-	Label     string
-	IsDefault bool
-	Position  *int
+	GroupUID          uuid.UUID
+	Slug              string
+	ProviderModelID   string
+	Label             string
+	IsDefault         bool
+	Position          *int
 }
 
 type PatchVariantInput struct {
-	Slug      *string
-	Label     *string
-	IsDefault *bool
-	Position  *int
+	Slug              *string
+	ProviderModelID   *string
+	Label             *string
+	IsDefault         *bool
+	Position          *int
 }
 
 type AdminGroupView struct {
@@ -255,19 +257,21 @@ func (s *AICatalogService) ListPublicCatalog(ctx context.Context, includePaid bo
 			i = len(out) - 1
 			index[row.GroupModelUid] = i
 		}
-		if row.VariantModelUid.Valid && row.VariantModelSlug != nil && row.VariantModelLabel != nil && row.VariantModelIsDefault != nil && row.VariantModelPosition != nil {
+		if row.VariantModelUid.Valid && row.VariantModelSlug != nil && row.VariantModelLabel != nil && row.VariantModelIsDefault != nil && row.VariantModelPosition != nil &&
+			row.VariantModelProviderModelID != nil && strings.TrimSpace(*row.VariantModelProviderModelID) != "" {
 			out[i].Variants = append(out[i].Variants, domain.AIModelVariant{
 				Meta: domain.Meta{
 					UID:       row.VariantModelUid.Bytes,
 					CreatedAt: row.VariantModelCreatedAt.Time,
 					UpdatedAt: row.VariantModelUpdatedAt.Time,
 				},
-				GroupUID:  row.GroupModelUid,
-				Slug:      *row.VariantModelSlug,
-				Label:     *row.VariantModelLabel,
-				IsDefault: *row.VariantModelIsDefault,
-				Position:  int(*row.VariantModelPosition),
-				DeletedAt: timePtr(row.VariantModelDeletedAt),
+				GroupUID:        row.GroupModelUid,
+				Slug:            *row.VariantModelSlug,
+				ProviderModelID: strings.TrimSpace(*row.VariantModelProviderModelID),
+				Label:           *row.VariantModelLabel,
+				IsDefault:       *row.VariantModelIsDefault,
+				Position:        int(*row.VariantModelPosition),
+				DeletedAt:       timePtr(row.VariantModelDeletedAt),
 			})
 		}
 	}
@@ -294,6 +298,10 @@ func (s *AICatalogService) CreateVariant(ctx context.Context, in CreateVariantIn
 	if err != nil {
 		return domain.AIModelVariant{}, err
 	}
+	providerModelID, err := domain.ValidateProviderModelID(in.ProviderModelID)
+	if err != nil {
+		return domain.AIModelVariant{}, err
+	}
 	position := int32(0)
 	if in.Position != nil {
 		position = int32(*in.Position)
@@ -302,12 +310,13 @@ func (s *AICatalogService) CreateVariant(ctx context.Context, in CreateVariantIn
 		position = int32(len(variants))
 	}
 	v, err := s.q.CreateAIVariant(ctx, dbgen.CreateAIVariantParams{
-		Uid:       domain.NewUID(),
-		GroupUid:  in.GroupUID,
-		Slug:      slug,
-		Label:     strings.TrimSpace(in.Label),
-		IsDefault: false,
-		Position:  position,
+		Uid:               domain.NewUID(),
+		GroupUid:          in.GroupUID,
+		Slug:              slug,
+		ProviderModelID:   providerModelID,
+		Label:             strings.TrimSpace(in.Label),
+		IsDefault:         false,
+		Position:          position,
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -333,6 +342,7 @@ func (s *AICatalogService) PatchVariant(ctx context.Context, uid uuid.UUID, in P
 		return domain.AIModelVariant{}, mapNoRows(err)
 	}
 	var slug, label *string
+	var providerModelID *string
 	var pos *int32
 	var isDefault *bool
 	if in.Slug != nil {
@@ -341,6 +351,13 @@ func (s *AICatalogService) PatchVariant(ctx context.Context, uid uuid.UUID, in P
 			return domain.AIModelVariant{}, err
 		}
 		slug = &v
+	}
+	if in.ProviderModelID != nil {
+		v, err := domain.ValidateProviderModelID(*in.ProviderModelID)
+		if err != nil {
+			return domain.AIModelVariant{}, err
+		}
+		providerModelID = &v
 	}
 	if in.Label != nil {
 		v := strings.TrimSpace(*in.Label)
@@ -354,11 +371,12 @@ func (s *AICatalogService) PatchVariant(ctx context.Context, uid uuid.UUID, in P
 		isDefault = in.IsDefault
 	}
 	v, err := s.q.PatchAIVariant(ctx, dbgen.PatchAIVariantParams{
-		Uid:       uid,
-		Slug:      slug,
-		Label:     label,
-		IsDefault: isDefault,
-		Position:  pos,
+		Uid:               uid,
+		Slug:              slug,
+		ProviderModelID:   providerModelID,
+		Label:             label,
+		IsDefault:         isDefault,
+		Position:          pos,
 	})
 	if err != nil {
 		if isUniqueViolation(err) {
@@ -477,12 +495,13 @@ func (s *AICatalogService) ImportProviderModels(ctx context.Context, groupUID uu
 	for i, v := range imported {
 		def := !hasDefault && i == 0
 		if _, err := s.q.UpsertAIVariantImport(ctx, dbgen.UpsertAIVariantImportParams{
-			Uid:       domain.NewUID(),
-			GroupUid:  groupUID,
-			Slug:      v.Slug,
-			Label:     v.Label,
-			IsDefault: def,
-			Position:  int32(i),
+			Uid:               domain.NewUID(),
+			GroupUid:          groupUID,
+			Slug:              v.Slug,
+			ProviderModelID:   v.ProviderModelID,
+			Label:             v.Label,
+			IsDefault:         def,
+			Position:          int32(i),
 		}); err != nil {
 			return AdminGroupView{}, 0, "", err
 		}
@@ -661,7 +680,11 @@ func normalizeProviderModels(models []upstreamAIModel) []domain.AIImportedVarian
 		if label == "" {
 			label = strings.TrimSpace(m.ID)
 		}
-		out = append(out, domain.AIImportedVariant{Slug: slug, Label: label})
+		out = append(out, domain.AIImportedVariant{
+			Slug:            slug,
+			ProviderModelID: strings.TrimSpace(m.ID),
+			Label:           label,
+		})
 	}
 	return out
 }
@@ -704,9 +727,9 @@ func (s *AICatalogService) SeedDefaultIfEmpty(ctx context.Context) error {
 		pos                      int
 	}
 	type v struct {
-		slug, label string
-		def         bool
-		pos         int
+		slug, providerID, label string
+		def                     bool
+		pos                     int
 	}
 	groups := []g{
 		{"deepseek", "DeepSeek", "Черновик", "#4ade80", true, 0},
@@ -716,11 +739,11 @@ func (s *AICatalogService) SeedDefaultIfEmpty(ctx context.Context) error {
 		{"gemini", "Gemini", "Идеи", "#60a5fa", false, 4},
 	}
 	variants := map[string][]v{
-		"claude":   {{"claude-opus-4-6", "Opus 4.6", true, 0}, {"claude-sonnet-4-6", "Sonnet 4.6", false, 1}, {"claude-haiku-4-5", "Haiku 4.5", false, 2}},
-		"deepseek": {{"deepseek-v3-2", "V3.2", true, 0}, {"deepseek-chat", "", false, 1}, {"deepseek-v3-2-exp", "V3.2-Exp", false, 2}, {"deepseek-v4", "V4", false, 3}},
-		"gpt":      {{"gpt-5-4-thinking", "GPT-5.4 Thinking", true, 0}, {"gpt-5-4-pro", "GPT-5.4 Pro", false, 1}, {"gpt-5-4-mini", "GPT-5.4 mini", false, 2}},
-		"gemini":   {{"gemini-3-flash", "Gemini-3-Flash", true, 0}, {"gemini-3-pro", "Gemini-3-Pro", false, 1}, {"gemini-1-5-pro", "Gemini-1.5-Pro", false, 2}},
-		"grok":     {{"grok-4-20", "Grok 4.20", true, 0}, {"grok-4-1-fast", "Grok 4.1 Fast", false, 1}, {"grok-4-1-fast-nr", "Grok 4.1 Fast NR", false, 2}},
+		"claude":   {{"claude-opus-4-6", "claude-opus-4-6", "Opus 4.6", true, 0}, {"claude-sonnet-4-6", "claude-sonnet-4-6", "Sonnet 4.6", false, 1}, {"claude-haiku-4-5", "claude-haiku-4-5", "Haiku 4.5", false, 2}},
+		"deepseek": {{"deepseek-v3-2", "deepseek-v3-2", "V3.2", true, 0}, {"deepseek-chat", "deepseek-chat", "", false, 1}, {"deepseek-v3-2-exp", "deepseek-v3-2-exp", "V3.2-Exp", false, 2}, {"deepseek-v4", "deepseek-v4", "V4", false, 3}},
+		"gpt":      {{"gpt-5-4-thinking", "gpt-5-4-thinking", "GPT-5.4 Thinking", true, 0}, {"gpt-5-4-pro", "gpt-5-4-pro", "GPT-5.4 Pro", false, 1}, {"gpt-5-4-mini", "gpt-5-4-mini", "GPT-5.4 mini", false, 2}},
+		"gemini":   {{"gemini-3-flash", "gemini-3-flash", "Gemini-3-Flash", true, 0}, {"gemini-3-pro", "gemini-3-pro", "Gemini-3-Pro", false, 1}, {"gemini-1-5-pro", "gemini-1-5-pro", "Gemini-1.5-Pro", false, 2}},
+		"grok":     {{"grok-4-20", "grok-4-20", "Grok 4.20", true, 0}, {"grok-4-1-fast", "grok-4-1-fast", "Grok 4.1 Fast", false, 1}, {"grok-4-1-fast-nr", "grok-4-1-fast-nr", "Grok 4.1 Fast NR", false, 2}},
 	}
 	for _, gr := range groups {
 		pos := gr.pos
@@ -738,11 +761,12 @@ func (s *AICatalogService) SeedDefaultIfEmpty(ctx context.Context) error {
 		for _, vv := range variants[gr.slug] {
 			p := vv.pos
 			if _, err := s.CreateVariant(ctx, CreateVariantInput{
-				GroupUID:  group.UID,
-				Slug:      vv.slug,
-				Label:     vv.label,
-				IsDefault: vv.def,
-				Position:  &p,
+				GroupUID:        group.UID,
+				Slug:            vv.slug,
+				ProviderModelID: vv.providerID,
+				Label:           vv.label,
+				IsDefault:       vv.def,
+				Position:        &p,
 			}); err != nil && !isUniqueViolation(err) {
 				return err
 			}

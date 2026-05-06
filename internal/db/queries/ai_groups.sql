@@ -46,6 +46,7 @@ SELECT
   v.uid AS variant_model_uid,
   v.group_uid AS variant_model_group_uid,
   v.slug AS variant_model_slug,
+  v.provider_model_id AS variant_model_provider_model_id,
   v.label AS variant_model_label,
   v.is_default AS variant_model_is_default,
   v.position AS variant_model_position,

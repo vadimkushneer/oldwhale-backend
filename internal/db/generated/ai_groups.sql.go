@@ -235,6 +235,7 @@ SELECT
   v.uid AS variant_model_uid,
   v.group_uid AS variant_model_group_uid,
   v.slug AS variant_model_slug,
+  v.provider_model_id AS variant_model_provider_model_id,
   v.label AS variant_model_label,
   v.is_default AS variant_model_is_default,
   v.position AS variant_model_position,
@@ -251,26 +252,27 @@ ORDER BY g.position, g.uid, v.position, v.uid
 `
 
 type ListPublicCatalogJoinedRow struct {
-	GroupModelUid          uuid.UUID
-	GroupModelSlug         string
-	GroupModelLabel        string
-	GroupModelRole         string
-	GroupModelColor        string
-	GroupModelFree         bool
-	GroupModelPosition     int32
-	GroupModelApiKeyEnvVar string
-	GroupModelDeletedAt    pgtype.Timestamptz
-	GroupModelCreatedAt    time.Time
-	GroupModelUpdatedAt    time.Time
-	VariantModelUid        pgtype.UUID
-	VariantModelGroupUid   pgtype.UUID
-	VariantModelSlug       *string
-	VariantModelLabel      *string
-	VariantModelIsDefault  *bool
-	VariantModelPosition   *int32
-	VariantModelDeletedAt  pgtype.Timestamptz
-	VariantModelCreatedAt  pgtype.Timestamptz
-	VariantModelUpdatedAt  pgtype.Timestamptz
+	GroupModelUid               uuid.UUID
+	GroupModelSlug              string
+	GroupModelLabel             string
+	GroupModelRole              string
+	GroupModelColor             string
+	GroupModelFree              bool
+	GroupModelPosition          int32
+	GroupModelApiKeyEnvVar      string
+	GroupModelDeletedAt         pgtype.Timestamptz
+	GroupModelCreatedAt         time.Time
+	GroupModelUpdatedAt         time.Time
+	VariantModelUid             pgtype.UUID
+	VariantModelGroupUid        pgtype.UUID
+	VariantModelSlug            *string
+	VariantModelProviderModelID *string
+	VariantModelLabel           *string
+	VariantModelIsDefault       *bool
+	VariantModelPosition        *int32
+	VariantModelDeletedAt       pgtype.Timestamptz
+	VariantModelCreatedAt       pgtype.Timestamptz
+	VariantModelUpdatedAt       pgtype.Timestamptz
 }
 
 func (q *Queries) ListPublicCatalogJoined(ctx context.Context, includePaid bool) ([]ListPublicCatalogJoinedRow, error) {
@@ -297,6 +299,7 @@ func (q *Queries) ListPublicCatalogJoined(ctx context.Context, includePaid bool)
 			&i.VariantModelUid,
 			&i.VariantModelGroupUid,
 			&i.VariantModelSlug,
+			&i.VariantModelProviderModelID,
 			&i.VariantModelLabel,
 			&i.VariantModelIsDefault,
 			&i.VariantModelPosition,

@@ -48,6 +48,21 @@ func ValidateEnvVarName(s string) (string, error) {
 	return s, nil
 }
 
+const maxProviderModelIDLen = 2048
+
+// ValidateProviderModelID trims and checks upstream model identifiers (Ollama tags,
+// Anthropic model ids, etc.).
+func ValidateProviderModelID(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return "", ErrInvalidInput
+	}
+	if len(s) > maxProviderModelIDLen {
+		return "", ErrInvalidInput
+	}
+	return s, nil
+}
+
 func ValidateUsername(s string) (string, error) {
 	s = strings.TrimSpace(s)
 	if len(s) < 2 {

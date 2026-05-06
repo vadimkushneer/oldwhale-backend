@@ -356,31 +356,34 @@ type AiReorderRequest struct {
 
 // AiVariantAdmin defines model for AiVariantAdmin.
 type AiVariantAdmin struct {
-	CreatedAt DateTime   `json:"created_at"`
-	DeletedAt *time.Time `json:"deleted_at,omitempty"`
-	GroupUid  UID        `json:"group_uid"`
-	IsDefault bool       `json:"is_default"`
-	Label     string     `json:"label"`
-	Position  int        `json:"position"`
-	Slug      string     `json:"slug"`
-	Uid       UID        `json:"uid"`
-	UpdatedAt DateTime   `json:"updated_at"`
+	CreatedAt       DateTime   `json:"created_at"`
+	DeletedAt       *time.Time `json:"deleted_at,omitempty"`
+	GroupUid        UID        `json:"group_uid"`
+	IsDefault       bool       `json:"is_default"`
+	Label           string     `json:"label"`
+	Position        int        `json:"position"`
+	ProviderModelId string     `json:"provider_model_id"`
+	Slug            string     `json:"slug"`
+	Uid             UID        `json:"uid"`
+	UpdatedAt       DateTime   `json:"updated_at"`
 }
 
 // AiVariantCreateRequest defines model for AiVariantCreateRequest.
 type AiVariantCreateRequest struct {
-	IsDefault *bool   `json:"is_default,omitempty"`
-	Label     *string `json:"label,omitempty"`
-	Position  *int    `json:"position,omitempty"`
-	Slug      string  `json:"slug"`
+	IsDefault       *bool   `json:"is_default,omitempty"`
+	Label           *string `json:"label,omitempty"`
+	Position        *int    `json:"position,omitempty"`
+	ProviderModelId string  `json:"provider_model_id"`
+	Slug            string  `json:"slug"`
 }
 
 // AiVariantPatchRequest defines model for AiVariantPatchRequest.
 type AiVariantPatchRequest struct {
-	IsDefault *bool   `json:"is_default,omitempty"`
-	Label     *string `json:"label,omitempty"`
-	Position  *int    `json:"position,omitempty"`
-	Slug      *string `json:"slug,omitempty"`
+	IsDefault       *bool   `json:"is_default,omitempty"`
+	Label           *string `json:"label,omitempty"`
+	Position        *int    `json:"position,omitempty"`
+	ProviderModelId *string `json:"provider_model_id,omitempty"`
+	Slug            *string `json:"slug,omitempty"`
 }
 
 // AiVariantPublic defines model for AiVariantPublic.
@@ -1841,36 +1844,36 @@ var swaggerSpec = []string{
 	"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",
-	"8bDhVjMlYXeUZRG/Le66QFWhpfU8ebBdRN8tOBHjECY4jeRuyciBkrE1EZR37mtJtGR+ZUvQL3dmYGhh",
-	"+Xt2tY2UN6rfzHb3r32Dpi56utGy29yylwTyJmBvhOa/GxfMzG5mg32vYuyMMJdiVSSVs3v2DA2bYqke",
-	"O08Au1Tg1DQyIjMBNrUK9LmmvKZL6Wi4dAhImQR9bxQSrOZlxrgOvRFeqE0MiWLrueAl58x2t5D/3Bz7",
-	"TDObWW8BR3L2/re6aCGxTM0gX3CcRLrfcyutybrZxrpmU0Kd8bVcZ2Wd1473H6ubj8aaKB3sG2vEQiLU",
-	"Eg7tQbFfrZctmn+AKRFy0CK1f/nNrhyy6EzFIsuNa00f+6XZhgSyccp6+DPCQo4jhdetonzvgsCBD2q2",
-	"vkYsTl0KT/dLrsrY5u2yGrLHJkZ02B8bkS51XLc0OnE9OgDbnCQ3zkKO7KNYAQQpJ3Jxp7qbUX4CzIGr",
-	"dKn+e9L//ZzD9Nc/7lV20a3VKtBPV0ifSZmgpRJM6IQZUiMCThLDU9Hb+/tb79e79++889srb8K49z4K",
-	"vT9mOIJj75YJOeVw999rjwhPzsAThE4j8BLgQoU0GoD3hINnoOHxJ3pJJZELj4RAJZkQ4MLDHLyHh6s3",
-	"4tg7v/LyIwDvGRbmGYcJcCUm9J4WHtA54YzGQOUnqqnDUwSewqXHaLT4j+rnzXGUgulNYQ7c4yBTTo0E",
-	"OSNCWXL8iepqLamzWWGSeoR8NFfqa/NPj0+OT9RcswQoTgg6Q6+OT45f6ZgnZ9r9I5yQkUbJCJNRMMPy",
-	"KGKmomEKelUqSOir6asQnaFfwJCh86usWkBoaRzHIDXkP35Fim2izynoa2yzUFFEYiLzucRmqjKy/uOJ",
-	"j2L8xRxPnJ6o//LDih9sJRv2AdhkIsAxQlnkSXeRGecs5LUkAZeYCWexXU4D8XIJk2xnoopiph3YWNmb",
-	"byusfC2/A3H5NXfAqMSEiorMjjL0ffpWEiw38Vtb5qrI2lrwqoJyU0tNKd6GvdWfWzlbp/ntJFSqWVfd",
-	"u1bRLB9VTjSpVUfT05OTrAZJZvUMOEkiEujQOvpTmIOVbgPZK+p0IqwmQNXM0/F86aPXO9TAbOQsI/6E",
-	"Q29CImkIzeuTH4Yf8oHiVM4YJ/+D0Az6avhBf2b8iYQh0Aqv0emvzGg+PiogSKwy6sfitB89qk7V1At0",
-	"fhTMIHjWRIwJS+5VjMUkX5K/oYKKovyfWLjYHcBsr9osqzxPbRaWQ4Lc+iaOFeQQPHschMr1+8L5FZ3j",
-	"iIQeL5yzExSsCiVa2NcvpuGgQcZR3WHxRqbNZk7wW+FurB0K67bann1j3XKF7XLz4SCuxv338ONeMDqJ",
-	"SLDjNTXSl446uKY2sKXVlfVetx4KcWtXoJ3Q9rq+v83E5GnvWw97o68pCZeru4n6LL3Rv9eCQpuf7thE",
-	"HmX3HcZVr4d31TsmvQlLabh5WLRsq9XGfX2HWkVOH/r/qE8CgpllPaif9xd9K5eWLz747hc933bY1Wt6",
-	"ZGpCRqZKxNyT7APbnXhFuQJnMJTbqpf2jnNrrZEtyusWB6fUPvrx5HT4cfMKNQ+yFruHf7m09GUgP39R",
-	"eSi8W2tp9g54WzGABQG5M4ac+hL/3AsAmkluZvE3R3N3M0E6Gx1VSlpbttuVUtaBt93uqtym4BWYz1Ps",
-	"ykUFbPtx8nJY6cfKv3GOvKd4eliefIBwGsMoJUei9KJ140q9gdVHZNDQh5OW79XYjqevPFH+8ExXj5ib",
-	"+2VLKK8ZPNBhsPUrRIc4Ed7A6d/A2Ug22VXsF0UkjZB/EANnpFq1i83fWonN4N1MVVfmDYTs+nfW9gzr",
-	"WiWOw78v+yTAjeBeFOJBZHy0jT282YA4rDD3IlhDYevukV2rC32xmN4CYqZeqeW+VF+VD0bLyh/g6OTi",
-	"0x0PXvvgm8XReZvv/iTnIRGSA469lOI5JqaqdR1hS78vETU4G8E8/1SnMx/rKbk07TqVxVW/bbdVuGlZ",
-	"yxK+ZCYcGSdV/b0usObbu7tLL+t40AvIvd/cNCPDHGw3gcK85ZQdIQx8dGD/RqUtxTtOC/ovjlTORrrE",
-	"vCUOp3Km35wYKBRX3srY976k9q6PxePXbDqF0DNv5h5u+fw96rEKwCoQr4GVZy+stOM1f7VlIMiuvznz",
-	"ElGb63hY8rD/XY8DQOadE1ekv4Ght+FWvVPOgUovFQeruezO4W8g8+ZMv7HX5E3zTt+QHi3eGrQYqH5V",
-	"rPXVXnxZIau5rzIHPC6Nf/k8J5Ipj9AZGqGSY/MvkuedVB7PftHTUPr/BipP85Re/s287fq4/H8AAAD/",
-	"/w==",
+	"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",
+	"/2+g8jRP6eXfzNuuj8v/BwAA//8=",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

@@ -49,11 +49,16 @@ func (c *ProviderClient) SetHTTPClient(client *http.Client) {
 }
 
 func NormalizeProvider(provider string) string {
-	switch strings.TrimSpace(strings.ToLower(provider)) {
+	s := strings.TrimSpace(strings.ToLower(provider))
+	switch s {
 	case "claude":
 		return "anthropic"
 	default:
-		return strings.TrimSpace(strings.ToLower(provider))
+		// Catalog groups often use distinct slugs (e.g. `ollama-local`) while still using the Ollama HTTP API.
+		if strings.HasPrefix(s, "ollama") {
+			return "ollama"
+		}
+		return s
 	}
 }
 

@@ -43,15 +43,16 @@ type AiModelGroup struct {
 }
 
 type AiModelVariant struct {
-	Uid       uuid.UUID
-	GroupUid  uuid.UUID
-	Slug      string
-	Label     string
-	IsDefault bool
-	Position  int32
-	DeletedAt pgtype.Timestamptz
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	Uid             uuid.UUID
+	GroupUid        uuid.UUID
+	Slug            string
+	ProviderModelID string
+	Label           string
+	IsDefault       bool
+	Position        int32
+	DeletedAt       pgtype.Timestamptz
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 type User struct {

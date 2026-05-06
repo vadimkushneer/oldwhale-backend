@@ -69,6 +69,10 @@ func (s *AIChatService) StartJob(ctx context.Context, in StartJobInput) (StartJo
 	if variant.GroupUid != group.Uid {
 		return StartJobOutput{}, domain.ErrInvalidInput
 	}
+	modelID, err := domain.ValidateProviderModelID(variant.ProviderModelID)
+	if err != nil {
+		return StartJobOutput{}, domain.ErrInvalidInput
+	}
 	if !llm.SupportsProvider(group.Slug) {
 		return StartJobOutput{}, domain.ErrInvalidInput
 	}
@@ -98,7 +102,7 @@ func (s *AIChatService) StartJob(ctx context.Context, in StartJobInput) (StartJo
 	s.jobs.Create(out.RequestUID.String(), out.UserMessageUID.String(), out.AssistantMessageUID.String())
 	req := llm.ChatRequest{
 		Provider:            group.Slug,
-		Model:               variant.Slug,
+		Model:               modelID,
 		APIKey:              apiKey,
 		Message:             message,
 		EditorMode:          string(mode),
