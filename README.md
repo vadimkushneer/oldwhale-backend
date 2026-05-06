@@ -50,6 +50,8 @@ Without **`DATABASE_URL`**, the server exits on startup.
 
 Set **`JWT_SECRET`** (16+ chars). Set **`CORS_ORIGIN`** for your frontend as a **plain text** value (e.g. `http://localhost:5173` or `https://youruser.github.io` — **origin only, no path**). On DigitalOcean App Platform, do **not** use an encrypted secret or bindable for `CORS_ORIGIN`; if the env value looks like `EV[...]`, browsers will reject it. Use a normal environment string, or leave unset for `*`.
 
+`CORS_ORIGIN` accepts a **comma-separated allowlist**. The middleware echoes whichever entry matches the request's `Origin` header (and adds `Vary: Origin`); if none match, the first entry is used as a fallback so single-origin deployments behave exactly as before. Custom schemes are accepted — for Capacitor WebViews include `https://localhost` (Android, with `androidScheme: "https"`) and `capacitor://localhost` (iOS default). Example: `CORS_ORIGIN=http://localhost:5173,https://localhost,capacitor://localhost`.
+
 ## Deploy (DigitalOcean, etc.)
 
 Use the **[Dockerfile](Dockerfile)** on App Platform (or another registry) so production matches local Docker. Set **`DATABASE_URL`**, **`JWT_SECRET`**, **`PORT`** / **`HTTP_ADDR`** as in [README_DOCKER.md](README_DOCKER.md) and [README_DATABASE.md](README_DATABASE.md). On **DigitalOcean App Platform**, if **`DATABASE_URL`** stays a literal `${db-name.DATABASE_URL}` string, the deploy will fail until the bindable resolves or you paste a real URI—see [README_DATABASE.md — DO App Platform: DATABASE_URL not substituted](README_DATABASE.md#do-app-platform-database_url-not-substituted).

@@ -41,14 +41,34 @@ func SlogLogger(next stdhttp.Handler) stdhttp.Handler {
 }
 
 func CORS(rawOrigin string) func(stdhttp.Handler) stdhttp.Handler {
-	allowed := normalizeCORSOrigin(rawOrigin)
+	allowed := parseCORSAllowlist(rawOrigin)
+	wildcard := len(allowed) == 0 || allowed[0] == "*"
+	allowedSet := make(map[string]struct{}, len(allowed))
+	for _, o := range allowed {
+		allowedSet[o] = struct{}{}
+	}
 	return func(next stdhttp.Handler) stdhttp.Handler {
 		return stdhttp.HandlerFunc(func(w stdhttp.ResponseWriter, r *stdhttp.Request) {
-			o := allowed
-			if o == "" {
-				o = "*"
+			origin := r.Header.Get("Origin")
+			switch {
+			case wildcard:
+				w.Header().Set("Access-Control-Allow-Origin", "*")
+			case origin != "":
+				if _, ok := allowedSet[origin]; ok {
+					w.Header().Set("Access-Control-Allow-Origin", origin)
+				} else {
+					/*
+					 * Default to the first configured origin so existing
+					 * curl/single-origin deployments behave as before
+					 * (previously the middleware always emitted the configured
+					 * origin regardless of request).
+					 */
+					w.Header().Set("Access-Control-Allow-Origin", allowed[0])
+				}
+				w.Header().Set("Vary", "Origin")
+			default:
+				w.Header().Set("Access-Control-Allow-Origin", allowed[0])
 			}
-			w.Header().Set("Access-Control-Allow-Origin", o)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 			w.Header().Set("Access-Control-Max-Age", "86400")
@@ -61,21 +81,61 @@ func CORS(rawOrigin string) func(stdhttp.Handler) stdhttp.Handler {
 	}
 }
 
-func normalizeCORSOrigin(raw string) string {
-	o := strings.TrimSpace(raw)
-	o = strings.Trim(o, `"'`)
-	if o == "" {
-		return ""
+/*
+parseCORSAllowlist accepts the value of the CORS_ORIGIN env var and returns
+the set of allowed browser origins.
+
+Accepted formats:
+
+  - "" (unset)               -> nil (caller treats as wildcard "*")
+  - "*"                       -> []string{"*"}
+  - "https://a.example"       -> []string{"https://a.example"}
+  - "https://a, https://b"    -> []string{"https://a", "https://b"}
+  - mix of valid + garbage    -> only valid entries kept; if none survive,
+    the function returns nil (= wildcard) and logs a warning.
+
+Each entry is canonicalised to "scheme://host[:port]" with no trailing slash
+or path so it can be compared verbatim against the browser's `Origin`
+header. This is the value Capacitor's WebView sends as `https://localhost`
+on Android (with `androidScheme: "https"`) and `capacitor://localhost` on
+iOS — both of which can be added to the allowlist alongside the regular
+Vite dev origin (`http://localhost:5173`) without further code changes.
+*/
+func parseCORSAllowlist(raw string) []string {
+	cleaned := strings.TrimSpace(raw)
+	cleaned = strings.Trim(cleaned, `"'`)
+	if cleaned == "" {
+		return nil
 	}
-	if o == "*" {
-		return "*"
+	if cleaned == "*" {
+		return []string{"*"}
 	}
-	u, err := url.Parse(o)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		slog.Warn("invalid CORS_ORIGIN; using wildcard", "raw", raw)
-		return ""
+	parts := strings.Split(cleaned, ",")
+	out := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+	for _, p := range parts {
+		entry := strings.TrimSpace(p)
+		entry = strings.Trim(entry, `"'`)
+		if entry == "" {
+			continue
+		}
+		u, err := url.Parse(entry)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			slog.Warn("ignoring invalid CORS_ORIGIN entry", "entry", entry)
+			continue
+		}
+		canonical := u.Scheme + "://" + u.Host
+		if _, dup := seen[canonical]; dup {
+			continue
+		}
+		seen[canonical] = struct{}{}
+		out = append(out, canonical)
 	}
-	return u.Scheme + "://" + u.Host
+	if len(out) == 0 {
+		slog.Warn("no valid CORS_ORIGIN entries; using wildcard", "raw", raw)
+		return nil
+	}
+	return out
 }
 
 func BearerUser(secret []byte) func(stdhttp.Handler) stdhttp.Handler {
