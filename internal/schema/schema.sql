@@ -40,6 +40,9 @@ CREATE TABLE IF NOT EXISTS ai_model_groups (
 );
 -- Existing deployments: tables created before soft-delete lacked deleted_at; IF NOT EXISTS skips CREATE TABLE.
 ALTER TABLE ai_model_groups ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+-- Partial indexes may use integer predicates (e.g. free = 1); those must go before ALTER TYPE
+-- or PostgreSQL errors with "operator does not exist: boolean = integer".
+DROP INDEX IF EXISTS idx_ai_groups_free_position;
 -- Older schemas used integer flags; partial indexes require boolean predicates.
 -- Drop legacy CHECKs like (free = 0) before casting or they become (boolean = integer).
 DO $$
@@ -104,6 +107,7 @@ ALTER TABLE ai_model_variants ADD COLUMN IF NOT EXISTS provider_model_id TEXT NO
 UPDATE ai_model_variants SET provider_model_id = slug WHERE provider_model_id = '';
 UPDATE ai_model_variants SET provider_model_id = 'qwen2.5:7b-instruct' WHERE slug = 'qwen2-5-7b-instruct';
 ALTER TABLE ai_model_variants ALTER COLUMN provider_model_id DROP DEFAULT;
+DROP INDEX IF EXISTS uq_ai_variants_default_per_group_active;
 DO $$
 DECLARE
   dt text;
