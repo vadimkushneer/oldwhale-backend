@@ -40,9 +40,25 @@ CREATE TABLE IF NOT EXISTS ai_model_groups (
 );
 -- Existing deployments: tables created before soft-delete lacked deleted_at; IF NOT EXISTS skips CREATE TABLE.
 ALTER TABLE ai_model_groups ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
--- Partial indexes may use integer predicates (e.g. free = 1); those must go before ALTER TYPE
--- or PostgreSQL errors with "operator does not exist: boolean = integer".
-DROP INDEX IF EXISTS idx_ai_groups_free_position;
+-- Partial indexes may reference free with integer literals (e.g. free = 1) under any index name;
+-- indkey often omits free when free appears only in WHERE. Drop all partial indexes on this table
+-- before ALTER TYPE or PostgreSQL errors with "operator does not exist: boolean = integer".
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT n.nspname AS sch, ic.relname AS inm
+    FROM pg_index i
+    JOIN pg_class tbl ON tbl.oid = i.indrelid
+    JOIN pg_namespace n ON n.oid = tbl.relnamespace
+    JOIN pg_class ic ON ic.oid = i.indexrelid
+    WHERE n.nspname = 'public' AND tbl.relname = 'ai_model_groups'
+      AND NOT i.indisprimary
+      AND i.indpred IS NOT NULL
+  LOOP
+    EXECUTE format('DROP INDEX IF EXISTS %I.%I', r.sch, r.inm);
+  END LOOP;
+END $$;
 -- Older schemas used integer flags; partial indexes require boolean predicates.
 -- Drop legacy CHECKs like (free = 0) before casting or they become (boolean = integer).
 DO $$
@@ -107,7 +123,22 @@ ALTER TABLE ai_model_variants ADD COLUMN IF NOT EXISTS provider_model_id TEXT NO
 UPDATE ai_model_variants SET provider_model_id = slug WHERE provider_model_id = '';
 UPDATE ai_model_variants SET provider_model_id = 'qwen2.5:7b-instruct' WHERE slug = 'qwen2-5-7b-instruct';
 ALTER TABLE ai_model_variants ALTER COLUMN provider_model_id DROP DEFAULT;
-DROP INDEX IF EXISTS uq_ai_variants_default_per_group_active;
+DO $$
+DECLARE r record;
+BEGIN
+  FOR r IN
+    SELECT n.nspname AS sch, ic.relname AS inm
+    FROM pg_index i
+    JOIN pg_class tbl ON tbl.oid = i.indrelid
+    JOIN pg_namespace n ON n.oid = tbl.relnamespace
+    JOIN pg_class ic ON ic.oid = i.indexrelid
+    WHERE n.nspname = 'public' AND tbl.relname = 'ai_model_variants'
+      AND NOT i.indisprimary
+      AND i.indpred IS NOT NULL
+  LOOP
+    EXECUTE format('DROP INDEX IF EXISTS %I.%I', r.sch, r.inm);
+  END LOOP;
+END $$;
 DO $$
 DECLARE
   dt text;
