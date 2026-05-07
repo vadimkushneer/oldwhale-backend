@@ -116,6 +116,29 @@ CREATE TABLE IF NOT EXISTS ai_model_variants (
   created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
   updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
+-- IF NOT EXISTS skipped CREATE: legacy tables may use group_id or omit group_uid entirely.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'ai_model_variants' AND column_name = 'group_id'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'ai_model_variants' AND column_name = 'group_uid'
+  ) THEN
+    ALTER TABLE ai_model_variants RENAME COLUMN group_id TO group_uid;
+  END IF;
+END $$;
+ALTER TABLE ai_model_variants ADD COLUMN IF NOT EXISTS group_uid UUID REFERENCES ai_model_groups(uid) ON DELETE CASCADE;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'ai_model_variants' AND column_name = 'group_uid'
+  ) AND NOT EXISTS (SELECT 1 FROM ai_model_variants WHERE group_uid IS NULL LIMIT 1) THEN
+    ALTER TABLE ai_model_variants ALTER COLUMN group_uid SET NOT NULL;
+  END IF;
+END $$;
 ALTER TABLE ai_model_variants ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
 -- Existing deployments: add column and backfill before enforcing semantics.
@@ -197,6 +220,10 @@ CREATE TABLE IF NOT EXISTS ai_chat_logs (
   note_context          JSONB,
   created_at            TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
+-- IF NOT EXISTS skipped CREATE: ensure columns referenced by indexes exist.
+ALTER TABLE ai_chat_logs ADD COLUMN IF NOT EXISTS user_uid UUID REFERENCES users(uid) ON DELETE SET NULL;
+ALTER TABLE ai_chat_logs ADD COLUMN IF NOT EXISTS group_uid UUID REFERENCES ai_model_groups(uid) ON DELETE SET NULL;
+ALTER TABLE ai_chat_logs ADD COLUMN IF NOT EXISTS variant_uid UUID REFERENCES ai_model_variants(uid) ON DELETE SET NULL;
 CREATE INDEX IF NOT EXISTS idx_ai_chat_logs_created       ON ai_chat_logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ai_chat_logs_user_created  ON ai_chat_logs(user_uid, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_ai_chat_logs_group_created ON ai_chat_logs(group_uid, created_at DESC);
