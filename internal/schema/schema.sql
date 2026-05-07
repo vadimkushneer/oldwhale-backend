@@ -40,6 +40,21 @@ CREATE TABLE IF NOT EXISTS ai_model_groups (
 );
 -- Existing deployments: tables created before soft-delete lacked deleted_at; IF NOT EXISTS skips CREATE TABLE.
 ALTER TABLE ai_model_groups ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+-- Older schemas used integer flags; partial indexes require boolean predicates.
+DO $$
+DECLARE
+  dt text;
+BEGIN
+  SELECT c.data_type INTO dt
+  FROM information_schema.columns c
+  WHERE c.table_schema = 'public' AND c.table_name = 'ai_model_groups' AND c.column_name = 'free'
+  LIMIT 1;
+  IF dt IN ('smallint', 'integer', 'bigint') THEN
+    ALTER TABLE ai_model_groups ALTER COLUMN free DROP DEFAULT;
+    ALTER TABLE ai_model_groups ALTER COLUMN free TYPE boolean USING (COALESCE(free::bigint, 0) <> 0);
+    ALTER TABLE ai_model_groups ALTER COLUMN free SET DEFAULT FALSE;
+  END IF;
+END $$;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_ai_groups_slug_active
   ON ai_model_groups(slug) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_ai_groups_free_position
@@ -67,6 +82,20 @@ ALTER TABLE ai_model_variants ADD COLUMN IF NOT EXISTS provider_model_id TEXT NO
 UPDATE ai_model_variants SET provider_model_id = slug WHERE provider_model_id = '';
 UPDATE ai_model_variants SET provider_model_id = 'qwen2.5:7b-instruct' WHERE slug = 'qwen2-5-7b-instruct';
 ALTER TABLE ai_model_variants ALTER COLUMN provider_model_id DROP DEFAULT;
+DO $$
+DECLARE
+  dt text;
+BEGIN
+  SELECT c.data_type INTO dt
+  FROM information_schema.columns c
+  WHERE c.table_schema = 'public' AND c.table_name = 'ai_model_variants' AND c.column_name = 'is_default'
+  LIMIT 1;
+  IF dt IN ('smallint', 'integer', 'bigint') THEN
+    ALTER TABLE ai_model_variants ALTER COLUMN is_default DROP DEFAULT;
+    ALTER TABLE ai_model_variants ALTER COLUMN is_default TYPE boolean USING (COALESCE(is_default::bigint, 0) <> 0);
+    ALTER TABLE ai_model_variants ALTER COLUMN is_default SET DEFAULT FALSE;
+  END IF;
+END $$;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_ai_variants_slug_active
   ON ai_model_variants(group_uid, slug) WHERE deleted_at IS NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_ai_variants_default_per_group_active
