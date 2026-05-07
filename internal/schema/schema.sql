@@ -275,7 +275,7 @@ END $$;
 
 CREATE TABLE IF NOT EXISTS ai_model_variants (
   uid                 UUID         PRIMARY KEY,
-  group_uid           UUID         NOT NULL,
+  group_uid           UUID,
   slug                TEXT         NOT NULL,
   provider_model_id   TEXT         NOT NULL,
   label               TEXT         NOT NULL DEFAULT '',
@@ -346,9 +346,7 @@ BEGIN
   SET group_uid = (SELECT g.uid FROM ai_model_groups g ORDER BY g.position, g.uid LIMIT 1)
   WHERE group_uid IS NULL
     AND EXISTS (SELECT 1 FROM ai_model_groups);
-  IF NOT EXISTS (SELECT 1 FROM ai_model_variants WHERE group_uid IS NULL LIMIT 1) THEN
-    ALTER TABLE ai_model_variants ALTER COLUMN group_uid SET NOT NULL;
-  END IF;
+  ALTER TABLE ai_model_variants ALTER COLUMN group_uid DROP NOT NULL;
 
   ALTER TABLE ai_model_variants ADD COLUMN IF NOT EXISTS slug TEXT NOT NULL DEFAULT '';
   ALTER TABLE ai_model_variants ALTER COLUMN slug SET DEFAULT '';
