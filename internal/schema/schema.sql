@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS ai_model_groups (
   created_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
   updated_at      TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
+-- Existing deployments: tables created before soft-delete lacked deleted_at; IF NOT EXISTS skips CREATE TABLE.
+ALTER TABLE ai_model_groups ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_ai_groups_slug_active
   ON ai_model_groups(slug) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_ai_groups_free_position
@@ -58,6 +60,7 @@ CREATE TABLE IF NOT EXISTS ai_model_variants (
   created_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
   updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
+ALTER TABLE ai_model_variants ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
 -- Existing deployments: add column and backfill before enforcing semantics.
 ALTER TABLE ai_model_variants ADD COLUMN IF NOT EXISTS provider_model_id TEXT NOT NULL DEFAULT '';
