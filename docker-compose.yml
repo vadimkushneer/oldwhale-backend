@@ -1,50 +1,37 @@
-# Local stack: API container + PostgreSQL container only (no SQLite).
-# Usage: docker compose up --build
-# API: http://localhost:8080  Swagger: http://localhost:8080/swagger
-#
-# Data persistence: Postgres uses named volume "ow_pgdata" (see bottom). Rebuilds do NOT
-# remove it. Data is removed only with: docker compose down -v  OR  docker volume rm …
-
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
-      POSTGRES_USER: ow
-      POSTGRES_PASSWORD: owlocal
-      POSTGRES_DB: ow
+      POSTGRES_USER: ${POSTGRES_USER:-ow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-owlocal}
+      POSTGRES_DB: ${POSTGRES_DB:-ow}
     ports:
       - "5432:5432"
     volumes:
-      - ow_pgdata:/var/lib/postgresql/data
+      - ow_pgdata_pg18:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ow -d ow"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ow} -d ${POSTGRES_DB:-ow}"]
       interval: 3s
       timeout: 5s
       retries: 15
       start_period: 10s
 
   api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-ow}:${POSTGRES_PASSWORD:-owlocal}@db:5432/${POSTGRES_DB:-ow}?sslmode=disable
+      PORT: ${PORT:-8080}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173,https://localhost,capacitor://localhost}
+      DB_SYNCHRONIZE: ${DB_SYNCHRONIZE:-true}
     ports:
       - "8080:8080"
-    environment:
-      DATABASE_URL: postgres://ow:owlocal@db:5432/ow?sslmode=disable
-      JWT_SECRET: local-dev-change-me-to-32-chars-min!!
-      CORS_ORIGIN: http://localhost:5173
-      PORT: "8080"
-      ADMIN_USERNAME: admin
-      ADMIN_PASSWORD: admin123
-      ADMIN_EMAIL: admin@oldwhale.local
-      RESET_SCHEMA_ON_START: "false"
-      ADMIN_PASSWORD_SYNC: "true"
-      # Set on host: export ANTHROPIC_API_KEY=...  (never commit real keys)
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      ANTHROPIC_BASE_URL: ${ANTHROPIC_BASE_URL:-}
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
-      OLLAMA_API_KEY: ${OLLAMA_API_KEY:-}
     depends_on:
       db:
         condition: service_healthy
 
 volumes:
-  ow_pgdata:
+  ow_pgdata_pg18:

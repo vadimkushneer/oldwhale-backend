@@ -1,6 +1,6 @@
-data/
-.docker/pgdata/
+node_modules
+dist
+coverage
 .env
-oldwhale-api
-*.exe
+npm-debug.log
 .DS_Store

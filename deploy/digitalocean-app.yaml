@@ -1,0 +1,25 @@
+name: oldwhale-backend
+services:
+  - name: api
+    dockerfile_path: oldwhale-backend/Dockerfile
+    source_dir: /
+    http_port: 8080
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    envs:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "8080"
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        type: SECRET
+      - key: JWT_SECRET
+        scope: RUN_TIME
+        type: SECRET
+      - key: CORS_ORIGIN
+        scope: RUN_TIME
+        value: https://example.com
+      - key: DB_SYNCHRONIZE
+        scope: RUN_TIME
+        value: "false"

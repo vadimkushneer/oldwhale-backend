@@ -1,21 +1,25 @@
 # syntax=docker/dockerfile:1
-# Production-style image: static Go binary, no SQLite, PostgreSQL only at runtime via DATABASE_URL.
 
-FROM golang:1.26-alpine AS build
-WORKDIR /src
-RUN apk add --no-cache git ca-certificates
-COPY go.mod go.sum ./
-RUN go mod download
-COPY . .
-# Generated code under internal/db/generated and internal/http/generated is committed;
-# production builds compile it as-is and do not run codegen.
-RUN CGO_ENABLED=0 GOOS=linux go build -tags netgo -ldflags '-s -w' -o /out/app ./cmd/server
-
-FROM alpine:3.20
-RUN apk add --no-cache ca-certificates tzdata
+FROM node:26.1.0-alpine AS deps
 WORKDIR /app
-COPY --from=build /out/app ./app
-USER nobody
-EXPOSE 8080
+COPY package*.json ./
+RUN npm ci
+
+FROM node:26.1.0-alpine AS build
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN npm run build
+RUN npm prune --omit=dev
+
+FROM node:26.1.0-alpine AS runtime
+ENV NODE_ENV=production
 ENV PORT=8080
-CMD ["./app"]
+WORKDIR /app
+COPY --from=build --chown=node:node /app/package*.json ./
+COPY --from=build --chown=node:node /app/node_modules ./node_modules
+COPY --from=build --chown=node:node /app/dist ./dist
+COPY --from=build --chown=node:node /app/openapi.yaml ./openapi.yaml
+USER node
+EXPOSE 8080
+CMD ["node", "dist/main.js"]
