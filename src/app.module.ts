@@ -21,6 +21,7 @@ import { AdminAiGroupVariantsModule } from './admin-ai-group-variants/admin-ai-g
 import { AdminAiGroupVariantsOrderModule } from './admin-ai-group-variants-order/admin-ai-group-variants-order.module';
 import { AdminAiVariantsModule } from './admin-ai-variants/admin-ai-variants.module';
 import { AdminUsersModule } from './admin-users/admin-users.module';
+import { LlmGroupModule } from './llm-group/llm-group.module';
 
 @Module({
   imports: [
@@ -60,6 +61,7 @@ import { AdminUsersModule } from './admin-users/admin-users.module';
     AdminAiGroupVariantsOrderModule,
     AdminAiVariantsModule,
     AdminUsersModule,
+    LlmGroupModule,
   ],
   controllers: [AppController],
   providers: [AppService],
