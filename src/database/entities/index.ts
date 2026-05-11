@@ -1,6 +1,7 @@
 import { AiChatLogEntity } from './ai-chat-log.entity';
 import { AiModelGroupEntity } from './ai-model-group.entity';
 import { AiModelVariantEntity } from './ai-model-variant.entity';
+import { LlmGroup } from '../../llm-group/entities/llm-group.entity';
 import { UserEntity } from './user.entity';
 import { UserUiPreferenceEntity } from './user-ui-preference.entity';
 
@@ -17,4 +18,5 @@ export const databaseEntities = [
   AiModelVariantEntity,
   AiChatLogEntity,
   UserUiPreferenceEntity,
+  LlmGroup,
 ];

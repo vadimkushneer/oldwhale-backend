@@ -1,9 +1,9 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { LlmGroupService } from './llm-group.service';
 import { CreateLlmGroupDto } from './dto/create-llm-group.dto';
 import { UpdateLlmGroupDto } from './dto/update-llm-group.dto';
 
-@Controller('llm-group')
+@Controller('llm-groups')
 export class LlmGroupController {
   constructor(private readonly llmGroupService: LlmGroupService) {}
 
@@ -17,18 +17,26 @@ export class LlmGroupController {
     return this.llmGroupService.findAll();
   }
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.llmGroupService.findOne(+id);
+  @Get(':uid')
+  findOne(@Param('uid') uid: string) {
+    return this.llmGroupService.findOne(uid);
   }
 
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateLlmGroupDto: UpdateLlmGroupDto) {
-    return this.llmGroupService.update(+id, updateLlmGroupDto);
+  @Patch(':uid')
+  update(
+    @Param('uid') uid: string,
+    @Body() updateLlmGroupDto: UpdateLlmGroupDto,
+  ) {
+    return this.llmGroupService.update(uid, updateLlmGroupDto);
   }
 
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.llmGroupService.remove(+id);
+  @Delete(':uid')
+  remove(@Param('uid') uid: string) {
+    return this.llmGroupService.remove(uid);
+  }
+
+  @Post(':uid/refresh-api-key')
+  refreshApiKey(@Param('uid') uid: string) {
+    return this.llmGroupService.refreshRuntimeApiKey(uid);
   }
 }
