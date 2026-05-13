@@ -1,4 +1,15 @@
 services:
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 5s
+      retries: 15
+      start_period: 5s
+
   db:
     image: postgres:18-alpine
     environment:
@@ -27,9 +38,14 @@ services:
       PORT: ${PORT:-8080}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173,https://localhost,capacitor://localhost}
       DB_SYNCHRONIZE: ${DB_SYNCHRONIZE:-true}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     ports:
       - "8080:8080"
     depends_on:
+      redis:
+        condition: service_healthy
       db:
         condition: service_healthy
 

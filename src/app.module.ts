@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
@@ -22,6 +23,7 @@ import { AdminAiGroupVariantsOrderModule } from './admin-ai-group-variants-order
 import { AdminAiVariantsModule } from './admin-ai-variants/admin-ai-variants.module';
 import { AdminUsersModule } from './admin-users/admin-users.module';
 import { LlmGroupModule } from './llm-group/llm-group.module';
+import { LlmModelModule } from './llm-model/llm-model.module';
 
 @Module({
   imports: [
@@ -44,6 +46,16 @@ import { LlmGroupModule } from './llm-group/llm-group.module';
         };
       },
     }),
+    BullModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => ({
+        connection: {
+          host: configService.get<string>('REDIS_HOST') ?? 'localhost',
+          port: Number(configService.get<string>('REDIS_PORT') ?? 6379),
+          password: configService.get<string>('REDIS_PASSWORD') || undefined,
+        },
+      }),
+    }),
     HealthModule,
     AuthModule,
     MeModule,
@@ -62,6 +74,7 @@ import { LlmGroupModule } from './llm-group/llm-group.module';
     AdminAiVariantsModule,
     AdminUsersModule,
     LlmGroupModule,
+    LlmModelModule,
   ],
   controllers: [AppController],
   providers: [AppService],

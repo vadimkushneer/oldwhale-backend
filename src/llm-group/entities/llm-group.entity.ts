@@ -1,4 +1,11 @@
-import { AfterLoad, Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import {
+  AfterLoad,
+  Column,
+  Entity,
+  OneToMany,
+  PrimaryGeneratedColumn,
+} from 'typeorm';
+import { LlmModel } from '../../llm-model/entities/llm-model.entity';
 
 @Entity({ name: 'llm_groups' })
 export class LlmGroup {
@@ -10,6 +17,9 @@ export class LlmGroup {
 
   @Column({ name: 'models_list_request_url', type: 'text' })
   modelsListRequestUrl: string;
+
+  @OneToMany(() => LlmModel, (llmModel) => llmModel.llmGroup)
+  llmModels: LlmModel[];
 
   // Runtime-only field; not persisted to DB.
   apiKey?: string;
