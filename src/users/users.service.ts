@@ -47,6 +47,15 @@ export class UsersService {
     return this.db.get<UserRow>('SELECT * FROM users WHERE username = ?', [username]);
   }
 
+  findRowByEmail(email: string): UserRow | undefined {
+    return this.db.get<UserRow>('SELECT * FROM users WHERE email = ?', [email.trim().toLowerCase()]);
+  }
+
+  findRowByUsernameOrEmail(identifier: string): UserRow | undefined {
+    const value = identifier.trim();
+    return this.db.get<UserRow>('SELECT * FROM users WHERE username = ? OR email = ?', [value, value.toLowerCase()]);
+  }
+
   findByUid(uid: string): PublicUser | undefined {
     const row = this.findRowByUid(uid);
     return row ? this.toPublic(row) : undefined;
@@ -78,6 +87,26 @@ export class UsersService {
       throw error;
     }
     return this.toPublic(this.findRowByUsername(username)!);
+  }
+
+  createFromVerifiedEmail(email: string, password: string): PublicUser {
+    const normalizedEmail = email.trim().toLowerCase();
+    const localPart = normalizedEmail.split('@')[0] ?? '';
+    const baseUsername = localPart.toLowerCase().replace(/[^a-z0-9._-]+/g, '').slice(0, 24) || 'user';
+    const safeBaseUsername = baseUsername.length >= 2 ? baseUsername : `user-${baseUsername}`;
+
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      const username = attempt === 0 ? safeBaseUsername : `${safeBaseUsername.slice(0, 17)}-${crypto.randomBytes(3).toString('hex')}`;
+      if (this.findRowByUsername(username)) continue;
+      return this.create({ username, email: normalizedEmail, password, role: 'user' });
+    }
+
+    return this.create({
+      username: `user-${crypto.randomBytes(6).toString('hex')}`,
+      email: normalizedEmail,
+      password,
+      role: 'user',
+    });
   }
 
   patch(idOrUid: string, patch: { disabled?: boolean; role?: UserRole }): PublicUser {

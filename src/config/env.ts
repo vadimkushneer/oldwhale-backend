@@ -29,6 +29,18 @@ export function readJwtTtlSeconds(): number {
   return value * factor[unit];
 }
 
+export function readRegistrationOtpTtlSeconds(): number {
+  const raw = readEnv('REGISTRATION_OTP_TTL_SECONDS', '600');
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : 600;
+}
+
+export function readRegistrationSetupTtlSeconds(): number {
+  const raw = readEnv('REGISTRATION_SETUP_TTL_SECONDS', '900');
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : 900;
+}
+
 export function corsOrigin(): boolean | string[] {
   const origin = process.env.CORS_ORIGIN;
   if (!origin) return true;

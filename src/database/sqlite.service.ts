@@ -73,6 +73,20 @@ export class SqliteService implements OnModuleInit {
         updated_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS pending_registrations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        uid TEXT NOT NULL UNIQUE,
+        email TEXT NOT NULL UNIQUE,
+        otp_hash TEXT NOT NULL,
+        otp_expires_at TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        setup_token_hash TEXT,
+        setup_token_expires_at TEXT,
+        verified_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS admin_ui_settings (
         user_uid TEXT PRIMARY KEY,
         ai_chat_log_columns_json TEXT NOT NULL,

@@ -39,6 +39,47 @@ paths:
         "400": { description: Invalid request, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "409": { description: Conflict, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
 
+  /api/auth/register/request-otp:
+    post:
+      tags: [Auth]
+      operationId: postAuthRegisterRequestOtp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterOtpRequest" }
+      responses:
+        "200": { description: OTP sent, content: { application/json: { schema: { $ref: "#/components/schemas/RegisterOtpSentResponse" } } } }
+        "400": { description: Invalid request, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: Email already exists, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/auth/register/verify-otp:
+    post:
+      tags: [Auth]
+      operationId: postAuthRegisterVerifyOtp
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterOtpVerifyRequest" }
+      responses:
+        "200": { description: OTP verified, content: { application/json: { schema: { $ref: "#/components/schemas/RegisterOtpVerifyResponse" } } } }
+        "400": { description: Invalid or expired OTP, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/auth/register/complete:
+    post:
+      tags: [Auth]
+      operationId: postAuthRegisterComplete
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/RegisterRequest" }
+      responses:
+        "200": { description: Registered, content: { application/json: { schema: { $ref: "#/components/schemas/AuthTokenResponse" } } } }
+        "400": { description: Invalid request, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "409": { description: Conflict, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
   /api/auth/login:
     post:
       tags: [Auth]
@@ -448,11 +489,38 @@ components:
 
     RegisterRequest:
       type: object
-      required: [username, email, password]
+      required: [email, setupToken, password]
       properties:
-        username: { type: string, minLength: 2 }
         email: { type: string, format: email }
+        setupToken: { type: string }
         password: { type: string, minLength: 6 }
+
+    RegisterOtpRequest:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+
+    RegisterOtpSentResponse:
+      type: object
+      required: [ok, expiresInSeconds]
+      properties:
+        ok: { type: boolean, enum: [true] }
+        expiresInSeconds: { type: integer, minimum: 1 }
+
+    RegisterOtpVerifyRequest:
+      type: object
+      required: [email, otp]
+      properties:
+        email: { type: string, format: email }
+        otp: { type: string, pattern: "^\\d{6}$" }
+
+    RegisterOtpVerifyResponse:
+      type: object
+      required: [setupToken, expiresInSeconds]
+      properties:
+        setupToken: { type: string }
+        expiresInSeconds: { type: integer, minimum: 1 }
 
     AdminCreateUserRequest:
       type: object

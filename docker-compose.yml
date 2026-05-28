@@ -34,6 +34,7 @@ services:
     env_file:
       - ../.env
     environment:
+      NODE_ENV: ${NODE_ENV:-development}
       DATABASE_URL: postgres://${POSTGRES_USER:-ow}:${POSTGRES_PASSWORD:-owlocal}@db:5432/${POSTGRES_DB:-ow}?sslmode=disable
       PORT: ${PORT:-8080}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173,https://localhost,capacitor://localhost}
@@ -41,6 +42,14 @@ services:
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
       REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      REGISTRATION_OTP_TTL_SECONDS: ${REGISTRATION_OTP_TTL_SECONDS:-600}
+      REGISTRATION_SETUP_TTL_SECONDS: ${REGISTRATION_SETUP_TTL_SECONDS:-900}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-Old Whale <no-reply@oldwhale.local>}
     ports:
       - "8080:8080"
     depends_on:
