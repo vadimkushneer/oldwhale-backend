@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { AdminGuard, JwtAuthGuard } from '../auth/auth.guard';
 import { UsersService } from '../users/users.service';
 
@@ -13,6 +13,7 @@ export class AdminUsersController {
   }
 
   @Post()
+  @HttpCode(200)
   create(@Body() body: { username?: string; login?: string; email: string; password: string; role?: 'user' | 'admin' }) {
     return { user: this.users.create(body) };
   }
@@ -23,6 +24,7 @@ export class AdminUsersController {
   }
 
   @Delete(':idOrUid')
+  @HttpCode(204)
   remove(@Param('idOrUid') idOrUid: string) {
     this.users.delete(idOrUid);
   }
