@@ -1,13 +1,16 @@
 import { Module } from '@nestjs/common';
-import { ApiModule } from '../api/api.module';
-import { SecurityModule } from '../security/security.module';
-import { PersistenceModule } from '../persistence/persistence.module';
+import { DatabaseModule } from '../database/database.module';
+import { UsersService } from '../users/users.service';
+import { JwtService } from '../security/jwt.service';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
+import { MeController } from './me.controller';
+import { AdminGuard, JwtAuthGuard, OptionalJwtAuthGuard } from './auth.guard';
 
 @Module({
-  imports: [ApiModule, SecurityModule, PersistenceModule],
-  controllers: [AuthController],
-  providers: [AuthService],
+  imports: [DatabaseModule],
+  controllers: [AuthController, MeController],
+  providers: [UsersService, JwtService, AuthService, JwtAuthGuard, OptionalJwtAuthGuard, AdminGuard],
+  exports: [UsersService, JwtService, AuthService, JwtAuthGuard, OptionalJwtAuthGuard, AdminGuard],
 })
 export class AuthModule {}

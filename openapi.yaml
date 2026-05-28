@@ -3,7 +3,8 @@ info:
   title: Old Whale API
   version: 2.0.0
   description: |
-    HTTP JSON API for Old Whale. PostgreSQL is the single persistence backend.
+    HTTP JSON API for Old Whale. The lightweight NestJS implementation uses
+    SQLite as the single persistence backend.
     Entity identifiers are UUIDs. AI provider keys are referenced by environment
     variable name only; key values are never returned by this API.
 servers:

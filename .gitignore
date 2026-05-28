@@ -4,3 +4,7 @@ coverage
 .env
 npm-debug.log
 .DS_Store
+data/*.sqlite
+data/*.sqlite-*
+data/*.db
+data/*.db-*

@@ -1,22 +1,9 @@
-import { Test, TestingModule } from '@nestjs/testing';
+import { Test } from '@nestjs/testing';
 import { AppController } from './app.controller';
-import { AppService } from './app.service';
 
 describe('AppController', () => {
-  let appController: AppController;
-
-  beforeEach(async () => {
-    const app: TestingModule = await Test.createTestingModule({
-      controllers: [AppController],
-      providers: [AppService],
-    }).compile();
-
-    appController = app.get<AppController>(AppController);
-  });
-
-  describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(appController.getHello()).toBe('Hello World!');
-    });
+  it('returns a root health-ish payload', async () => {
+    const moduleRef = await Test.createTestingModule({ controllers: [AppController] }).compile();
+    expect(moduleRef.get(AppController).root()).toEqual({ name: 'oldwhale-backend', status: 'ok' });
   });
 });

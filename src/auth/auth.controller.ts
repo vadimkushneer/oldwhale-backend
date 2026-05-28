@@ -1,18 +1,17 @@
 import { Body, Controller, Post } from '@nestjs/common';
-import { ApiFacade } from '../api/api.facade';
-import type { JsonBody } from '../api/api.facade';
+import { AuthService } from './auth.service';
 
 @Controller('api/auth')
 export class AuthController {
-  constructor(private readonly api: ApiFacade) {}
+  constructor(private readonly auth: AuthService) {}
 
   @Post('register')
-  register(@Body() body: JsonBody): Promise<JsonBody> {
-    return this.api.register(body);
+  register(@Body() body: { username?: string; login?: string; email?: string; password?: string }) {
+    return this.auth.register(body);
   }
 
   @Post('login')
-  login(@Body() body: JsonBody): Promise<JsonBody> {
-    return this.api.login(body);
+  login(@Body() body: { username?: string; login?: string; password?: string }) {
+    return this.auth.login(body);
   }
 }
