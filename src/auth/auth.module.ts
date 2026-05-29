@@ -6,6 +6,7 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { MeController } from './me.controller';
 import { AdminGuard, JwtAuthGuard, OptionalJwtAuthGuard } from './auth.guard';
+import { EmailDeliveryLogService } from './email-delivery-log.service';
 import { MailService } from './mail.service';
 import { RegistrationOtpService } from './registration-otp.service';
 
@@ -15,6 +16,7 @@ import { RegistrationOtpService } from './registration-otp.service';
   providers: [
     UsersService,
     JwtService,
+    EmailDeliveryLogService,
     MailService,
     RegistrationOtpService,
     AuthService,
@@ -22,6 +24,14 @@ import { RegistrationOtpService } from './registration-otp.service';
     OptionalJwtAuthGuard,
     AdminGuard,
   ],
-  exports: [UsersService, JwtService, AuthService, JwtAuthGuard, OptionalJwtAuthGuard, AdminGuard],
+  exports: [
+    UsersService,
+    JwtService,
+    AuthService,
+    EmailDeliveryLogService,
+    JwtAuthGuard,
+    OptionalJwtAuthGuard,
+    AdminGuard,
+  ],
 })
 export class AuthModule {}

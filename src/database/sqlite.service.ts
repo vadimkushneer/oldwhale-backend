@@ -87,6 +87,41 @@ export class SqliteService implements OnModuleInit {
         updated_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS email_delivery_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        uid TEXT NOT NULL UNIQUE,
+        purpose TEXT NOT NULL,
+        status TEXT NOT NULL,
+        recipient TEXT NOT NULL,
+        recipient_domain TEXT NOT NULL,
+        sender TEXT NOT NULL,
+        subject TEXT NOT NULL,
+        smtp_host TEXT,
+        smtp_port INTEGER,
+        smtp_secure INTEGER NOT NULL DEFAULT 0,
+        smtp_auth_configured INTEGER NOT NULL DEFAULT 0,
+        message_id TEXT,
+        envelope_json TEXT,
+        accepted_json TEXT,
+        rejected_json TEXT,
+        pending_json TEXT,
+        response TEXT,
+        queue_id TEXT,
+        error_name TEXT,
+        error_message TEXT,
+        error_code TEXT,
+        error_command TEXT,
+        error_response TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_email_delivery_logs_recipient_created
+        ON email_delivery_logs (recipient, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_email_delivery_logs_status_created
+        ON email_delivery_logs (status, created_at);
+
       CREATE TABLE IF NOT EXISTS admin_ui_settings (
         user_uid TEXT PRIMARY KEY,
         ai_chat_log_columns_json TEXT NOT NULL,
