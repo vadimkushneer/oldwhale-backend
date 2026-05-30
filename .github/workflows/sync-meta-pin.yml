@@ -1,0 +1,62 @@
+name: Sync meta submodule pin
+
+# When this repo's main advances, update the `oldwhale` meta-repo's submodule
+# gitlink for this repo to the just-pushed commit, so the meta-repo stays
+# reproducible (a fresh `git clone --recurse-submodules` reflects latest main).
+#
+# Requires a repository secret `META_REPO_TOKEN`: a fine-grained PAT with
+# Contents: Read and write on the `vadimkushneer/oldwhale` meta-repo.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: sync-meta-pin
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  bump-meta-pin:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout meta-repo
+        uses: actions/checkout@v4
+        with:
+          repository: vadimkushneer/oldwhale
+          ref: main
+          token: ${{ secrets.META_REPO_TOKEN }}
+          fetch-depth: 0
+          path: meta
+
+      - name: Bump submodule pin to pushed commit
+        env:
+          SUBPATH: oldwhale-backend
+          NEW_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          cd meta
+          git config user.name "oldwhale-meta-bot"
+          git config user.email "oldwhale-meta-bot@users.noreply.github.com"
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B main origin/main
+            CUR="$(git ls-tree HEAD "$SUBPATH" | awk '{print $3}')"
+            if [ -z "$CUR" ]; then
+              echo "::error::'$SUBPATH' is not a submodule of the meta-repo"; exit 1
+            fi
+            if [ "$CUR" = "$NEW_SHA" ]; then
+              echo "meta-repo already pinned to $NEW_SHA"; exit 0
+            fi
+            git update-index --cacheinfo "160000,$NEW_SHA,$SUBPATH"
+            git commit -m "chore(submodules): bump $SUBPATH to ${NEW_SHA:0:12}"
+            if git push origin main; then
+              echo "bumped $SUBPATH -> $NEW_SHA"; exit 0
+            fi
+            echo "meta push race; retrying ($attempt)"
+            sleep "$(( (RANDOM % 5) + 2 ))"
+          done
+          echo "::error::failed to update meta-repo after retries"; exit 1
