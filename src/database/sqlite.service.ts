@@ -206,8 +206,14 @@ export class SqliteService implements OnModuleInit {
   /** Adds a column to an existing table when it is missing (idempotent). */
   private ensureColumn(table: string, column: string, definition: string): void {
     const columns = this.all<{ name: string }>(`PRAGMA table_info(${table})`);
-    if (!columns.some((c) => c.name === column)) {
+    if (columns.some((c) => c.name === column)) return;
+    try {
       this.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition};`);
+      // Surfaced once at boot so deployments can confirm the migration ran.
+      console.log(`[sqlite] migration: added column ${table}.${column}`);
+    } catch (error) {
+      // Tolerate the column already existing (e.g. a concurrent boot added it first).
+      if (!String(error).toLowerCase().includes('duplicate column')) throw error;
     }
   }
 
