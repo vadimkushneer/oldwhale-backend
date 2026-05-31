@@ -29,6 +29,13 @@ export function readJwtTtlSeconds(): number {
   return value * factor[unit];
 }
 
+/** Credits (Krill / OWK) granted to a newly created account. */
+export function readDefaultUserCredits(): number {
+  const raw = readEnv('DEFAULT_USER_CREDITS', '300');
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? Math.trunc(value) : 300;
+}
+
 export function readRegistrationOtpTtlSeconds(): number {
   const raw = readEnv('REGISTRATION_OTP_TTL_SECONDS', '600');
   const value = Number(raw);

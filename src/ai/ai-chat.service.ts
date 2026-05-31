@@ -3,11 +3,15 @@ import { Injectable } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { SqliteService } from '../database/sqlite.service';
 import { InMemoryJobRunnerService } from '../jobs/in-memory-job-runner.service';
+import { UsersService } from '../users/users.service';
 import type { PublicUser } from '../users/users.types';
 import { AiCatalogService } from './ai-catalog.service';
 import type { AiGroupRow, AiVariantRow } from './ai.types';
-import { nowIso, toInt } from '../common/time';
-import { badRequest, notFound } from '../common/http-error';
+import { boolFromDb, nowIso, toInt } from '../common/time';
+import { badRequest, forbidden, notFound, paymentRequired } from '../common/http-error';
+
+/** Credits (Krill / OWK) charged per request to a paid (non-free) model group. */
+export const CREDITS_PER_PAID_REQUEST = 12;
 
 interface ChatCompletion {
   status: 'pending' | 'completed' | 'failed';
@@ -20,7 +24,7 @@ interface ChatCompletion {
 export class AiChatService {
   private readonly completions = new Map<string, ChatCompletion>();
 
-  constructor(private readonly db: SqliteService, private readonly catalog: AiCatalogService, private readonly jobs: InMemoryJobRunnerService) {}
+  constructor(private readonly db: SqliteService, private readonly catalog: AiCatalogService, private readonly jobs: InMemoryJobRunnerService, private readonly users: UsersService) {}
 
   accept(body: { message?: string; group_uid?: string; variant_uid?: string; editor_mode?: string; note_context?: unknown }, user: PublicUser | null, request: Request) {
     const message = body.message?.trim();
@@ -28,12 +32,22 @@ export class AiChatService {
     if (!body.group_uid || !body.variant_uid) badRequest('group_uid and variant_uid are required');
     const group = this.catalog.getGroup(body.group_uid);
     const variant = this.catalog.getVariant(body.variant_uid);
+
+    // Paid model groups are charged in Krill (OWK) up front; free groups cost nothing.
+    let credits: number | undefined;
+    if (!boolFromDb(group.free)) {
+      if (!user) forbidden('Войдите, чтобы использовать платные модели');
+      const remaining = this.users.tryCharge(user.uid, CREDITS_PER_PAID_REQUEST);
+      if (remaining === null) paymentRequired('Недостаточно кредитов');
+      credits = remaining;
+    }
+
     const requestUid = crypto.randomUUID();
     const userMessageUid = crypto.randomUUID();
     const assistantMessageUid = crypto.randomUUID();
     this.completions.set(requestUid, { status: 'pending', clients: new Set() });
     this.jobs.enqueue('ai-chat', async () => this.processChat({ requestUid, userMessageUid, assistantMessageUid, message, group, variant, user, request, editorMode: body.editor_mode ?? null, noteContext: body.note_context ?? null }), { attempts: 1 });
-    return { request_uid: requestUid, user_message_uid: userMessageUid, assistant_message_uid: assistantMessageUid };
+    return { request_uid: requestUid, user_message_uid: userMessageUid, assistant_message_uid: assistantMessageUid, credits };
   }
 
   stream(requestUid: string, response: Response): void {

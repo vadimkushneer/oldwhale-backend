@@ -68,6 +68,7 @@ export class SqliteService implements OnModuleInit {
         password_hash TEXT NOT NULL,
         role TEXT NOT NULL CHECK (role IN ('user', 'admin')),
         disabled INTEGER NOT NULL DEFAULT 0,
+        credits INTEGER NOT NULL DEFAULT 0,
         last_login_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -197,6 +198,17 @@ export class SqliteService implements OnModuleInit {
         FOREIGN KEY (llm_group_uid) REFERENCES llm_groups(uid) ON DELETE CASCADE
       );
     `);
+
+    // Additive migrations for databases created before a column existed.
+    this.ensureColumn('users', 'credits', 'INTEGER NOT NULL DEFAULT 0');
+  }
+
+  /** Adds a column to an existing table when it is missing (idempotent). */
+  private ensureColumn(table: string, column: string, definition: string): void {
+    const columns = this.all<{ name: string }>(`PRAGMA table_info(${table})`);
+    if (!columns.some((c) => c.name === column)) {
+      this.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition};`);
+    }
   }
 
   private seedCatalog(): void {

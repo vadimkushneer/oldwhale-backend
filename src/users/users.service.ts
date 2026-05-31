@@ -3,6 +3,7 @@ import { Injectable } from '@nestjs/common';
 import { SqliteService } from '../database/sqlite.service';
 import { conflict, notFound } from '../common/http-error';
 import { boolFromDb, nowIso } from '../common/time';
+import { readDefaultUserCredits } from '../config/env';
 import { hashPassword } from '../security/password';
 import type { PublicUser, UserRole, UserRow } from './users.types';
 
@@ -12,6 +13,13 @@ export interface CreateUserInput {
   email: string;
   password: string;
   role?: UserRole;
+  credits?: number;
+}
+
+/** Normalizes any external credit amount to a non-negative integer. */
+function normalizeCredits(value: unknown, fallback = 0): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : fallback;
 }
 
 @Injectable()
@@ -27,6 +35,7 @@ export class UsersService {
       email: row.email,
       role: row.role,
       disabled: boolFromDb(row.disabled),
+      credits: normalizeCredits(row.credits),
       last_login_at: row.last_login_at,
       created_at: row.created_at,
       updated_at: row.updated_at,
@@ -76,11 +85,12 @@ export class UsersService {
     if (!email.includes('@')) conflict('Email is invalid');
     if (input.password.length < 4) conflict('Password must be at least 4 characters');
     const now = nowIso();
+    const credits = normalizeCredits(input.credits, readDefaultUserCredits());
     try {
       this.db.run(
-        `INSERT INTO users (uid, username, email, password_hash, role, disabled, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 0, ?, ?)`,
-        [crypto.randomUUID(), username, email, hashPassword(input.password), input.role ?? 'user', now, now],
+        `INSERT INTO users (uid, username, email, password_hash, role, disabled, credits, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+        [crypto.randomUUID(), username, email, hashPassword(input.password), input.role ?? 'user', credits, now, now],
       );
     } catch (error) {
       if (String(error).includes('UNIQUE')) conflict('Username or email already exists');
@@ -109,12 +119,38 @@ export class UsersService {
     });
   }
 
-  patch(idOrUid: string, patch: { disabled?: boolean; role?: UserRole }): PublicUser {
+  patch(idOrUid: string, patch: { disabled?: boolean; role?: UserRole; credits?: number }): PublicUser {
     const user = this.findByIdOrUid(idOrUid);
     const disabled = patch.disabled === undefined ? user.disabled : patch.disabled;
     const role = patch.role ?? user.role;
-    this.db.run('UPDATE users SET disabled = ?, role = ?, updated_at = ? WHERE uid = ?', [disabled ? 1 : 0, role, nowIso(), user.uid]);
+    const credits = patch.credits === undefined ? user.credits : normalizeCredits(patch.credits);
+    this.db.run('UPDATE users SET disabled = ?, role = ?, credits = ?, updated_at = ? WHERE uid = ?', [disabled ? 1 : 0, role, credits, nowIso(), user.uid]);
     return this.toPublic(this.findRowByUid(user.uid)!);
+  }
+
+  /** Grants (or, with a negative delta, removes) credits, clamping the balance at 0. */
+  addCredits(idOrUid: string, delta: number): PublicUser {
+    const user = this.findByIdOrUid(idOrUid);
+    const next = Math.max(0, user.credits + Math.trunc(delta));
+    this.db.run('UPDATE users SET credits = ?, updated_at = ? WHERE uid = ?', [next, nowIso(), user.uid]);
+    return this.toPublic(this.findRowByUid(user.uid)!);
+  }
+
+  /**
+   * Atomically deducts `cost` credits from a user when the balance is sufficient.
+   * Returns the remaining balance, or `null` when the user has too few credits.
+   */
+  tryCharge(uid: string, cost: number): number | null {
+    const amount = Math.max(0, Math.trunc(cost));
+    if (amount === 0) {
+      return this.findByIdOrUid(uid).credits;
+    }
+    const result = this.db.run(
+      'UPDATE users SET credits = credits - ?, updated_at = ? WHERE uid = ? AND credits >= ?',
+      [amount, nowIso(), uid, amount],
+    );
+    if (Number(result.changes) === 0) return null;
+    return this.findRowByUid(uid)?.credits ?? null;
   }
 
   delete(idOrUid: string): void {

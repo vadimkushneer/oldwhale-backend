@@ -14,12 +14,12 @@ export class AdminUsersController {
 
   @Post()
   @HttpCode(200)
-  create(@Body() body: { username?: string; login?: string; email: string; password: string; role?: 'user' | 'admin' }) {
+  create(@Body() body: { username?: string; login?: string; email: string; password: string; role?: 'user' | 'admin'; credits?: number }) {
     return { user: this.users.create(body) };
   }
 
   @Patch(':idOrUid')
-  patch(@Param('idOrUid') idOrUid: string, @Body() body: { disabled?: boolean; role?: 'user' | 'admin' }) {
+  patch(@Param('idOrUid') idOrUid: string, @Body() body: { disabled?: boolean; role?: 'user' | 'admin'; credits?: number }) {
     return { user: this.users.patch(idOrUid, body) };
   }
 

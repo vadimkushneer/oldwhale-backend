@@ -104,6 +104,22 @@ paths:
         "200": { description: Current user, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
         "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
 
+  /api/me/credits/topup:
+    post:
+      tags: [Me]
+      operationId: topUpCredits
+      summary: Add credits (Krill / OWK) to the current account.
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreditsTopUpRequest" }
+      responses:
+        "200": { description: Updated user, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
+        "400": { description: Invalid amount, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
   /api/ai/models:
     get:
       tags: [AiModels]
@@ -125,6 +141,8 @@ paths:
       responses:
         "202": { description: Accepted, content: { application/json: { schema: { $ref: "#/components/schemas/AiChatAcceptedResponse" } } } }
         "400": { description: Invalid request, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "402": { description: Insufficient credits (Krill), content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Paid model requires sign-in, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "502": { description: Upstream unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
 
   /api/ai/chat/events:
@@ -469,13 +487,14 @@ components:
 
     User:
       type: object
-      required: [uid, username, email, role, disabled, created_at, updated_at]
+      required: [uid, username, email, role, disabled, credits, created_at, updated_at]
       properties:
         uid: { $ref: "#/components/schemas/UID" }
         username: { type: string }
         email: { type: string, format: email }
         role: { $ref: "#/components/schemas/UserRole" }
         disabled: { type: boolean }
+        credits: { type: integer, minimum: 0, description: "Credit balance, measured in Krill (OWK)." }
         last_login_at: { type: string, format: date-time, nullable: true }
         created_at: { $ref: "#/components/schemas/DateTime" }
         updated_at: { $ref: "#/components/schemas/DateTime" }
@@ -530,12 +549,20 @@ components:
         email: { type: string, format: email }
         password: { type: string, minLength: 4 }
         role: { $ref: "#/components/schemas/UserRole" }
+        credits: { type: integer, minimum: 0, description: "Initial Krill (OWK) balance; defaults to the server welcome grant." }
 
     PatchUserRequest:
       type: object
       properties:
         disabled: { type: boolean }
         role: { $ref: "#/components/schemas/UserRole" }
+        credits: { type: integer, minimum: 0, description: "New Krill (OWK) balance." }
+
+    CreditsTopUpRequest:
+      type: object
+      required: [amount]
+      properties:
+        amount: { type: integer, minimum: 1, maximum: 100000, description: "Krill (OWK) to add to the current account." }
 
     AuthTokenResponse:
       type: object
@@ -648,6 +675,7 @@ components:
         request_uid: { $ref: "#/components/schemas/UID" }
         user_message_uid: { $ref: "#/components/schemas/UID" }
         assistant_message_uid: { $ref: "#/components/schemas/UID" }
+        credits: { type: integer, minimum: 0, description: "Remaining Krill (OWK) balance after charging a paid request; omitted for free models." }
 
     AiChatResponse:
       type: object

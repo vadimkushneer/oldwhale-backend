@@ -8,6 +8,8 @@ export interface UserRow {
   password_hash: string;
   role: UserRole;
   disabled: number;
+  /** Credit balance, measured in Krill (OWK). */
+  credits: number;
   last_login_at: string | null;
   created_at: string;
   updated_at: string;
@@ -21,6 +23,8 @@ export interface PublicUser {
   email: string;
   role: UserRole;
   disabled: boolean;
+  /** Credit balance, measured in Krill (OWK). */
+  credits: number;
   last_login_at: string | null;
   created_at: string;
   updated_at: string;
