@@ -24,6 +24,7 @@ export class MailService {
 
     if (!this.host) {
       this.transporter = null;
+      this.logger.warn('SMTP_HOST is not configured; development emails are logged to the backend console and production sends will fail.');
       return;
     }
 
@@ -36,6 +37,9 @@ export class MailService {
       greetingTimeout: 15_000,
       socketTimeout: 30_000,
     });
+    this.logger.log(
+      `SMTP configured for transactional email; host=${this.host} port=${this.port} secure=${this.secure} authConfigured=${this.authConfigured}`,
+    );
   }
 
   async sendRegistrationOtp(email: string, otp: string, expiresInSeconds: number): Promise<void> {
@@ -97,5 +101,76 @@ export class MailService {
       );
       throw error;
     }
+  }
+
+  async sendPasswordResetLink(email: string, resetUrl: string, expiresInSeconds: number): Promise<void> {
+    const minutes = Math.max(1, Math.ceil(expiresInSeconds / 60));
+    const subject = 'Old Whale password reset';
+    const text = [
+      'Use this link to reset your Old Whale password:',
+      resetUrl,
+      `It expires in ${minutes} minute${minutes === 1 ? '' : 's'}.`,
+      'If you did not request this password reset, ignore this email and your password will stay unchanged.',
+    ].join('\n');
+
+    const logUid = this.emailLogs.createAttempt({
+      purpose: 'password_reset',
+      recipient: email,
+      sender: this.from,
+      subject,
+      smtpHost: this.host || undefined,
+      smtpPort: this.host ? this.port : undefined,
+      smtpSecure: this.secure,
+      smtpAuthConfigured: this.authConfigured,
+    });
+    this.logger.log(
+      `Password reset email send attempt created; logUid=${logUid} recipient=${this.maskEmail(email)} smtpConfigured=${Boolean(this.transporter)}`,
+    );
+
+    if (!this.transporter) {
+      if (process.env.NODE_ENV === 'production') {
+        this.emailLogs.complete(logUid, {
+          status: 'failed',
+          error: new Error('SMTP_HOST is required to send password reset emails'),
+        });
+        throw new Error('SMTP_HOST is required to send password reset emails');
+      }
+      this.logger.warn(`SMTP is not configured; password reset link for ${email}: ${resetUrl}`);
+      this.emailLogs.complete(logUid, { status: 'logged_to_console' });
+      return;
+    }
+
+    try {
+      const result = await this.transporter.sendMail({
+        from: this.from,
+        to: email,
+        subject,
+        text,
+      });
+      this.emailLogs.complete(logUid, {
+        status: 'accepted_by_smtp',
+        messageId: result.messageId,
+        envelope: result.envelope,
+        accepted: result.accepted,
+        rejected: result.rejected,
+        pending: result.pending,
+        response: result.response,
+      });
+      this.logger.log(
+        `Password reset email accepted by SMTP for ${email}; messageId=${result.messageId ?? 'n/a'} response=${result.response ?? 'n/a'}`,
+      );
+    } catch (error) {
+      this.emailLogs.complete(logUid, { status: 'failed', error });
+      this.logger.error(
+        `Password reset email failed for ${email}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw error;
+    }
+  }
+
+  private maskEmail(email: string): string {
+    const [local, domain] = email.trim().toLowerCase().split('@');
+    if (!domain) return '**';
+    return `${local.slice(0, 2)}***@${domain}`;
   }
 }

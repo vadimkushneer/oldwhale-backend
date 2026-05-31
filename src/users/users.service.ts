@@ -136,6 +136,12 @@ export class UsersService {
     return this.toPublic(this.findRowByUid(user.uid)!);
   }
 
+  updatePassword(uid: string, password: string): PublicUser {
+    if (password.length < 4) conflict('Password must be at least 4 characters');
+    this.db.run('UPDATE users SET password_hash = ?, updated_at = ? WHERE uid = ?', [hashPassword(password), nowIso(), uid]);
+    return this.toPublic(this.findRowByUid(uid)!);
+  }
+
   /**
    * Atomically deducts `cost` credits from a user when the balance is sufficient.
    * Returns the remaining balance, or `null` when the user has too few credits.

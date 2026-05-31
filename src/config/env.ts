@@ -48,11 +48,31 @@ export function readRegistrationSetupTtlSeconds(): number {
   return Number.isFinite(value) && value > 0 ? value : 900;
 }
 
+export function readPasswordResetTtlSeconds(): number {
+  const raw = readEnv('PASSWORD_RESET_TTL_SECONDS', '3600');
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : 3600;
+}
+
+export function readFrontendBaseUrl(): string {
+  const explicit = readEnv('FRONTEND_BASE_URL').replace(/\/+$/, '');
+  if (explicit) return explicit;
+  const firstBrowserOrigin = corsOriginValue()
+    .split(',')
+    .map((item) => item.trim())
+    .find((item) => /^https?:\/\//i.test(item));
+  return (firstBrowserOrigin || 'http://localhost:5173').replace(/\/+$/, '');
+}
+
 export function corsOrigin(): boolean | string[] {
-  const origin = process.env.CORS_ORIGIN;
+  const origin = corsOriginValue();
   if (!origin) return true;
   return origin
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function corsOriginValue(): string {
+  return process.env.CORS_ORIGIN ?? '';
 }

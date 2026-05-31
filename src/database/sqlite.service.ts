@@ -88,6 +88,25 @@ export class SqliteService implements OnModuleInit {
         updated_at TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        uid TEXT NOT NULL UNIQUE,
+        user_uid TEXT NOT NULL,
+        email TEXT NOT NULL,
+        token_hash TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        used_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (user_uid) REFERENCES users(uid) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_email_created
+        ON password_reset_tokens (email, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_unused
+        ON password_reset_tokens (user_uid, used_at);
+
       CREATE TABLE IF NOT EXISTS email_delivery_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         uid TEXT NOT NULL UNIQUE,

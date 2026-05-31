@@ -29,6 +29,18 @@ export class AuthController {
     return this.auth.completeRegistration(body);
   }
 
+  @Post('password-reset/request')
+  @HttpCode(200)
+  requestPasswordReset(@Body() body: { email?: string; login?: string; username?: string }) {
+    return this.auth.requestPasswordReset(body);
+  }
+
+  @Post('password-reset/complete')
+  @HttpCode(200)
+  completePasswordReset(@Body() body: { email?: string; token?: string; password?: string }) {
+    return this.auth.completePasswordReset(body);
+  }
+
   @Post('login')
   @HttpCode(200)
   login(@Body() body: { username?: string; login?: string; password?: string }) {

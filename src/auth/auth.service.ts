@@ -5,6 +5,7 @@ import { JwtService } from '../security/jwt.service';
 import { verifyPassword } from '../security/password';
 import { UsersService } from '../users/users.service';
 import type { PublicUser } from '../users/users.types';
+import { PasswordResetService } from './password-reset.service';
 import { RegistrationOtpService } from './registration-otp.service';
 
 @Injectable()
@@ -13,6 +14,7 @@ export class AuthService {
     private readonly users: UsersService,
     private readonly jwt: JwtService,
     private readonly registrationOtp: RegistrationOtpService,
+    private readonly passwordReset: PasswordResetService,
   ) {}
 
   register(input: { email?: string; password?: string; setupToken?: string }): { token: string; user: PublicUser } {
@@ -33,6 +35,14 @@ export class AuthService {
     const user = this.users.createFromVerifiedEmail(email, input.password);
     this.registrationOtp.deletePending(email);
     return { token: this.jwt.sign({ sub: user.uid, role: user.role }), user };
+  }
+
+  requestPasswordReset(input: { email?: string; login?: string; username?: string }): Promise<{ ok: true; expiresInSeconds: number }> {
+    return this.passwordReset.requestReset(input);
+  }
+
+  completePasswordReset(input: { email?: string; token?: string; password?: string }): { ok: true } {
+    return this.passwordReset.completeReset(input);
   }
 
   login(input: { username?: string; login?: string; password?: string }): { token: string; user: PublicUser } {

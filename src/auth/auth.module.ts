@@ -8,6 +8,7 @@ import { MeController } from './me.controller';
 import { AdminGuard, JwtAuthGuard, OptionalJwtAuthGuard } from './auth.guard';
 import { EmailDeliveryLogService } from './email-delivery-log.service';
 import { MailService } from './mail.service';
+import { PasswordResetService } from './password-reset.service';
 import { RegistrationOtpService } from './registration-otp.service';
 
 @Module({
@@ -19,6 +20,7 @@ import { RegistrationOtpService } from './registration-otp.service';
     EmailDeliveryLogService,
     MailService,
     RegistrationOtpService,
+    PasswordResetService,
     AuthService,
     JwtAuthGuard,
     OptionalJwtAuthGuard,
