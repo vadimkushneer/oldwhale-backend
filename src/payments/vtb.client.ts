@@ -8,7 +8,7 @@ export interface VtbRegisterOrderInput {
   currency: string;
   returnUrl: string;
   failUrl: string;
-  callbackUrl: string;
+  callbackUrl?: string;
   description: string;
   email?: string;
   clientId?: string;

@@ -94,6 +94,10 @@ export function readVtbLanguage(): string {
   return readEnv('VTB_LANGUAGE', 'ru').trim() || 'ru';
 }
 
+export function readVtbDynamicCallbackUrl(): string {
+  return readEnv('VTB_DYNAMIC_CALLBACK_URL').trim();
+}
+
 /** Minor KZT units charged per 1 OWK credit. Default: 100 tiyn = 1.00 KZT. */
 export function readVtbMinorUnitsPerOwk(): number {
   const raw = readEnv('VTB_KZT_MINOR_UNITS_PER_OWK', '100');

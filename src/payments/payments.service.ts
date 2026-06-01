@@ -6,6 +6,7 @@ import {
   readFrontendBaseUrl,
   readPublicApiBaseUrl,
   readVtbCurrency,
+  readVtbDynamicCallbackUrl,
   readVtbMinorUnitsPerOwk,
   readVtbSessionTimeoutSeconds,
 } from '../config/env';
@@ -36,6 +37,12 @@ function ensureSafeMinorAmount(credits: number): number {
   const amountMinor = credits * readVtbMinorUnitsPerOwk();
   if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) badRequest('payment amount is invalid');
   return amountMinor;
+}
+
+function vtbCallbackUrl(publicApiBase: string): string | undefined {
+  const explicit = readVtbDynamicCallbackUrl();
+  if (explicit) return explicit;
+  return publicApiBase.startsWith('https://') ? `${publicApiBase}/api/payments/vtb/callback` : undefined;
 }
 
 function publicOrder(row: PaymentOrderRow): PaymentOrderPublic {
@@ -70,13 +77,14 @@ export class PaymentsService {
     const publicApiBase = readPublicApiBaseUrl();
     const returnUrl = `${publicApiBase}/api/payments/vtb/return?order_uid=${encodeURIComponent(uid)}`;
     const failUrl = `${publicApiBase}/api/payments/vtb/return?order_uid=${encodeURIComponent(uid)}&failed=1`;
-    const callbackUrl = `${publicApiBase}/api/payments/vtb/callback`;
+    const localCallbackUrl = `${publicApiBase}/api/payments/vtb/callback`;
+    const dynamicCallbackUrl = vtbCallbackUrl(publicApiBase);
 
     this.db.run(
       `INSERT INTO payment_orders
        (uid, user_uid, provider, order_number, credits, amount_minor, currency, status, return_url, fail_url, callback_url, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [uid, user.uid, PROVIDER_VTB, orderNumber, credits, amountMinor, currency, 'pending', returnUrl, failUrl, callbackUrl, now, now],
+      [uid, user.uid, PROVIDER_VTB, orderNumber, credits, amountMinor, currency, 'pending', returnUrl, failUrl, dynamicCallbackUrl ?? localCallbackUrl, now, now],
     );
 
     const { request, response } = await this.vtb.registerOrder({
@@ -85,7 +93,7 @@ export class PaymentsService {
       currency,
       returnUrl,
       failUrl,
-      callbackUrl,
+      callbackUrl: dynamicCallbackUrl,
       email: user.email,
       clientId: user.uid,
       description: `OldWhale credits ${credits} OWK`,
