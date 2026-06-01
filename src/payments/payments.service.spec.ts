@@ -221,8 +221,21 @@ describe('PaymentsService', () => {
     expect(vtb.registerOrder).toHaveBeenCalledWith(expect.objectContaining({ callbackUrl: undefined }));
   });
 
-  it('sends HTTPS dynamic callback URL to VTB', async () => {
+  it('does not auto-generate dynamic callback URL only because public API is HTTPS', async () => {
     process.env.PUBLIC_API_BASE_URL = 'https://oldwhale.net';
+    const db = new InMemoryDb();
+    const user = insertUser(db);
+    const vtb = fakeVtb();
+    const service = new PaymentsService(db as never, vtb);
+
+    await service.createVtbOrder(user, { amount: 10 });
+
+    expect(vtb.registerOrder).toHaveBeenCalledWith(expect.objectContaining({ callbackUrl: undefined }));
+  });
+
+  it('sends explicitly configured HTTPS dynamic callback URL to VTB', async () => {
+    process.env.PUBLIC_API_BASE_URL = 'https://oldwhale.net';
+    process.env.VTB_DYNAMIC_CALLBACK_URL = 'https://oldwhale.net/api/payments/vtb/callback';
     const db = new InMemoryDb();
     const user = insertUser(db);
     const vtb = fakeVtb();
