@@ -187,6 +187,7 @@ describe('PaymentsService', () => {
   beforeEach(() => {
     process.env.FRONTEND_BASE_URL = 'http://localhost:5173';
     process.env.PUBLIC_API_BASE_URL = 'http://localhost:8080';
+    delete process.env.VTB_DYNAMIC_CALLBACK_URL;
     process.env.VTB_CURRENCY = '398';
     process.env.VTB_KZT_MINOR_UNITS_PER_OWK = '100';
     process.env.VTB_SESSION_TIMEOUT_SECONDS = '1200';
@@ -205,6 +206,33 @@ describe('PaymentsService', () => {
     expect(result.amount_minor).toBe(2500);
     expect(row.amount_minor).toBe(2500);
     expect(vtb.registerOrder).toHaveBeenCalledWith(expect.objectContaining({ amountMinor: 2500 }));
+  });
+
+  it('does not send a plain HTTP dynamic callback URL to VTB', async () => {
+    process.env.PUBLIC_API_BASE_URL = 'http://188.244.115.77';
+    process.env.VTB_DYNAMIC_CALLBACK_URL = 'http://188.244.115.77/api/payments/vtb/callback';
+    const db = new InMemoryDb();
+    const user = insertUser(db);
+    const vtb = fakeVtb();
+    const service = new PaymentsService(db as never, vtb);
+
+    await service.createVtbOrder(user, { amount: 10 });
+
+    expect(vtb.registerOrder).toHaveBeenCalledWith(expect.objectContaining({ callbackUrl: undefined }));
+  });
+
+  it('sends HTTPS dynamic callback URL to VTB', async () => {
+    process.env.PUBLIC_API_BASE_URL = 'https://oldwhale.net';
+    const db = new InMemoryDb();
+    const user = insertUser(db);
+    const vtb = fakeVtb();
+    const service = new PaymentsService(db as never, vtb);
+
+    await service.createVtbOrder(user, { amount: 10 });
+
+    expect(vtb.registerOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ callbackUrl: 'https://oldwhale.net/api/payments/vtb/callback' }),
+    );
   });
 
   it('marks local orders failed when VTB registration fails', async () => {

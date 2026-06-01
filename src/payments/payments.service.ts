@@ -41,7 +41,7 @@ function ensureSafeMinorAmount(credits: number): number {
 
 function vtbCallbackUrl(publicApiBase: string): string | undefined {
   const explicit = readVtbDynamicCallbackUrl();
-  if (explicit) return explicit;
+  if (explicit.startsWith('https://')) return explicit;
   return publicApiBase.startsWith('https://') ? `${publicApiBase}/api/payments/vtb/callback` : undefined;
 }
 
