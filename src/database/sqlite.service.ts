@@ -107,6 +107,37 @@ export class SqliteService implements OnModuleInit {
       CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_unused
         ON password_reset_tokens (user_uid, used_at);
 
+      CREATE TABLE IF NOT EXISTS payment_orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        uid TEXT NOT NULL UNIQUE,
+        user_uid TEXT NOT NULL,
+        provider TEXT NOT NULL,
+        order_number TEXT NOT NULL UNIQUE,
+        credits INTEGER NOT NULL,
+        amount_minor INTEGER NOT NULL,
+        currency TEXT NOT NULL,
+        status TEXT NOT NULL,
+        vtb_order_id TEXT UNIQUE,
+        form_url TEXT,
+        return_url TEXT NOT NULL,
+        fail_url TEXT NOT NULL,
+        callback_url TEXT NOT NULL,
+        raw_register_request_json TEXT,
+        raw_register_response_json TEXT,
+        raw_status_response_json TEXT,
+        raw_callback_json TEXT,
+        credited_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (user_uid) REFERENCES users(uid) ON DELETE CASCADE
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_payment_orders_user_created
+        ON payment_orders (user_uid, created_at);
+
+      CREATE INDEX IF NOT EXISTS idx_payment_orders_provider_order
+        ON payment_orders (provider, vtb_order_id);
+
       CREATE TABLE IF NOT EXISTS email_delivery_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         uid TEXT NOT NULL UNIQUE,

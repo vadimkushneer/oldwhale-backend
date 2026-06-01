@@ -64,6 +64,49 @@ export function readFrontendBaseUrl(): string {
   return (firstBrowserOrigin || 'http://localhost:5173').replace(/\/+$/, '');
 }
 
+export function readPublicApiBaseUrl(): string {
+  const explicit = readEnv('PUBLIC_API_BASE_URL').replace(/\/+$/, '');
+  if (explicit) return explicit;
+  return `http://localhost:${readPort()}`;
+}
+
+export function readVtbApiBaseUrl(): string {
+  return readEnv('VTB_API_BASE_URL', 'https://vtbkz.rbsuat.com/payment/rest/').replace(/\/?$/, '/');
+}
+
+export function readVtbUserName(): string {
+  return readEnv('VTB_USER_NAME', 'Oldwhale-api');
+}
+
+export function readVtbPassword(): string {
+  return readEnv('VTB_PASSWORD', 'Oldwhale');
+}
+
+export function readVtbToken(): string {
+  return readEnv('VTB_TOKEN');
+}
+
+export function readVtbCurrency(): string {
+  return readEnv('VTB_CURRENCY', '398').trim() || '398';
+}
+
+export function readVtbLanguage(): string {
+  return readEnv('VTB_LANGUAGE', 'ru').trim() || 'ru';
+}
+
+/** Minor KZT units charged per 1 OWK credit. Default: 100 tiyn = 1.00 KZT. */
+export function readVtbMinorUnitsPerOwk(): number {
+  const raw = readEnv('VTB_KZT_MINOR_UNITS_PER_OWK', '100');
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 100;
+}
+
+export function readVtbSessionTimeoutSeconds(): number {
+  const raw = readEnv('VTB_SESSION_TIMEOUT_SECONDS', '1200');
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 1200;
+}
+
 export function corsOrigin(): boolean | string[] {
   const origin = corsOriginValue();
   if (!origin) return true;
