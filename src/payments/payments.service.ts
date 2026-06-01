@@ -120,9 +120,9 @@ export class PaymentsService {
       ['registered', response.orderId, response.formUrl, json(request), json(response), registeredAt, uid],
     );
 
-    void this.vtb.getSessionStatus(response.orderId).catch((error: unknown) => {
+    void this.vtb.getOrderStatus(response.orderId).catch((error: unknown) => {
       this.logger.warn(
-        `VTB post-register session probe failed orderUid=${uid} orderNumber=${orderNumber} vtbOrderId=${response.orderId} error=${
+        `VTB post-register status probe failed orderUid=${uid} orderNumber=${orderNumber} vtbOrderId=${response.orderId} error=${
           error instanceof Error ? error.message : String(error)
         }`,
       );
