@@ -177,6 +177,7 @@ function fakeVtb(overrides: Partial<VtbClient> = {}): VtbClient {
       response: { orderId: 'vtb-order-1', formUrl: 'https://vtb.example/form' },
     })),
     getOrderStatus: jest.fn(async () => ({ errorCode: '0', orderStatus: 2, amount: 1000, currency: '398', orderNumber: '' })),
+    getSessionStatus: jest.fn(async () => ({ remainingSecs: 1200, orderNumber: 'order-1', amount: '100.00 KZT' })),
     isPaid: (response: VtbOrderStatusResponse) => String(response.errorCode ?? '0') === '0' && response.orderStatus === 2,
     ...overrides,
   } as unknown as VtbClient;

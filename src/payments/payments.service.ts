@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { badRequest, forbidden, notFound } from '../common/http-error';
 import { nowIso } from '../common/time';
 import {
@@ -62,6 +62,8 @@ function publicOrder(row: PaymentOrderRow): PaymentOrderPublic {
 
 @Injectable()
 export class PaymentsService {
+  private readonly logger = new Logger(PaymentsService.name);
+
   constructor(
     private readonly db: SqliteService,
     private readonly vtb: VtbClient,
@@ -117,6 +119,14 @@ export class PaymentsService {
        WHERE uid = ?`,
       ['registered', response.orderId, response.formUrl, json(request), json(response), registeredAt, uid],
     );
+
+    void this.vtb.getSessionStatus(response.orderId).catch((error: unknown) => {
+      this.logger.warn(
+        `VTB post-register session probe failed orderUid=${uid} orderNumber=${orderNumber} vtbOrderId=${response.orderId} error=${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    });
 
     const row = this.findRowByUid(uid);
     return {
