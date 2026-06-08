@@ -40,25 +40,6 @@ export interface VtbOrderStatusResponse {
   [key: string]: unknown;
 }
 
-export interface VtbSessionStatusResponse {
-  errorCode?: string | number;
-  errorMessage?: string;
-  remainingSecs?: number;
-  orderNumber?: string;
-  amount?: string;
-  backUrl?: string;
-  orderExpired?: boolean;
-  currencyAlphaCode?: string;
-  currencyNumericCode?: string;
-  merchantInfo?: {
-    merchantLogin?: string;
-    merchantUrl?: string;
-    merchantFullName?: string;
-  };
-  merchantOptions?: string[];
-  [key: string]: unknown;
-}
-
 function compactParams(params: Record<string, string | number | undefined>): URLSearchParams {
   const body = new URLSearchParams();
   Object.entries(params).forEach(([key, value]) => {
@@ -90,7 +71,6 @@ function safeRequestSummary(params: Record<string, string | number | undefined>)
   return {
     orderNumber: params.orderNumber,
     orderId: params.orderId,
-    MDORDER: params.MDORDER,
     amount: params.amount,
     currency: params.currency,
     language: params.language,
@@ -115,28 +95,6 @@ function safeResponseSummary(path: string, value: unknown): Record<string, unkno
       errorMessage: response.errorMessage,
       orderId: response.orderId,
       formUrl: summarizeFormUrl(response.formUrl),
-    };
-  }
-  if (path === 'getSessionStatus.do') {
-    const merchantInfo = response.merchantInfo as VtbSessionStatusResponse['merchantInfo'] | undefined;
-    return {
-      errorCode: response.errorCode,
-      errorMessage: response.errorMessage,
-      remainingSecs: response.remainingSecs,
-      orderNumber: response.orderNumber,
-      amount: response.amount,
-      backUrl: response.backUrl,
-      orderExpired: response.orderExpired,
-      currencyAlphaCode: response.currencyAlphaCode,
-      currencyNumericCode: response.currencyNumericCode,
-      merchantOptions: response.merchantOptions,
-      merchantInfo: merchantInfo
-        ? {
-            merchantLogin: merchantInfo.merchantLogin,
-            merchantUrl: merchantInfo.merchantUrl,
-            merchantFullName: merchantInfo.merchantFullName,
-          }
-        : undefined,
     };
   }
   return {
@@ -182,12 +140,6 @@ export class VtbClient {
         language: readVtbLanguage(),
       }),
     );
-  }
-
-  async getSessionStatus(orderId: string): Promise<VtbSessionStatusResponse> {
-    return this.postForm<VtbSessionStatusResponse>('getSessionStatus.do', {
-      MDORDER: orderId,
-    });
   }
 
   isPaid(response: VtbOrderStatusResponse): boolean {

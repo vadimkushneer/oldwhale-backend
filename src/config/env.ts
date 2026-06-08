@@ -106,9 +106,9 @@ export function readVtbMinorUnitsPerOwk(): number {
 }
 
 export function readVtbSessionTimeoutSeconds(): number {
-  const raw = readEnv('VTB_SESSION_TIMEOUT_SECONDS', '1200');
+  const raw = readEnv('VTB_SESSION_TIMEOUT_SECONDS', '18000');
   const value = Number(raw);
-  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 1200;
+  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 18000;
 }
 
 export function corsOrigin(): boolean | string[] {

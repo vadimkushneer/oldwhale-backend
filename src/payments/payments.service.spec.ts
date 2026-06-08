@@ -177,7 +177,6 @@ function fakeVtb(overrides: Partial<VtbClient> = {}): VtbClient {
       response: { orderId: 'vtb-order-1', formUrl: 'https://vtb.example/form' },
     })),
     getOrderStatus: jest.fn(async () => ({ errorCode: '0', orderStatus: 2, amount: 1000, currency: '398', orderNumber: '' })),
-    getSessionStatus: jest.fn(async () => ({ remainingSecs: 1200, orderNumber: 'order-1', amount: '100.00 KZT' })),
     isPaid: (response: VtbOrderStatusResponse) => String(response.errorCode ?? '0') === '0' && response.orderStatus === 2,
     ...overrides,
   } as unknown as VtbClient;
@@ -190,7 +189,7 @@ describe('PaymentsService', () => {
     delete process.env.VTB_DYNAMIC_CALLBACK_URL;
     process.env.VTB_CURRENCY = '398';
     process.env.VTB_KZT_MINOR_UNITS_PER_OWK = '100';
-    process.env.VTB_SESSION_TIMEOUT_SECONDS = '1200';
+    process.env.VTB_SESSION_TIMEOUT_SECONDS = '18000';
   });
 
   it('converts OWK credits into VTB minor currency units', async () => {

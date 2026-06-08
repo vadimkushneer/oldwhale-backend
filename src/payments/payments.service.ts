@@ -39,7 +39,7 @@ function ensureSafeMinorAmount(credits: number): number {
   return amountMinor;
 }
 
-function vtbCallbackUrl(publicApiBase: string): string | undefined {
+function vtbCallbackUrl(): string | undefined {
   const explicit = readVtbDynamicCallbackUrl();
   if (explicit.startsWith('https://')) return explicit;
   return undefined;
@@ -80,7 +80,8 @@ export class PaymentsService {
     const returnUrl = `${publicApiBase}/api/payments/vtb/return?order_uid=${encodeURIComponent(uid)}`;
     const failUrl = `${publicApiBase}/api/payments/vtb/return?order_uid=${encodeURIComponent(uid)}&failed=1`;
     const localCallbackUrl = `${publicApiBase}/api/payments/vtb/callback`;
-    const dynamicCallbackUrl = vtbCallbackUrl(publicApiBase);
+    const dynamicCallbackUrl = vtbCallbackUrl();
+    const sessionTimeoutSeconds = readVtbSessionTimeoutSeconds();
 
     this.db.run(
       `INSERT INTO payment_orders
@@ -99,7 +100,7 @@ export class PaymentsService {
       email: user.email,
       clientId: user.uid,
       description: `OldWhale credits ${credits} OWK`,
-      sessionTimeoutSeconds: readVtbSessionTimeoutSeconds(),
+      sessionTimeoutSeconds,
     });
 
     const registeredAt = nowIso();
@@ -120,13 +121,9 @@ export class PaymentsService {
       ['registered', response.orderId, response.formUrl, json(request), json(response), registeredAt, uid],
     );
 
-    void this.vtb.getOrderStatus(response.orderId).catch((error: unknown) => {
-      this.logger.warn(
-        `VTB post-register status probe failed orderUid=${uid} orderNumber=${orderNumber} vtbOrderId=${response.orderId} error=${
-          error instanceof Error ? error.message : String(error)
-        }`,
-      );
-    });
+    this.logger.log(
+      `VTB payment order registered orderUid=${uid} orderNumber=${orderNumber} vtbOrderId=${response.orderId} sessionTimeoutSecs=${sessionTimeoutSeconds} formUrl=${response.formUrl}`,
+    );
 
     const row = this.findRowByUid(uid);
     return {
