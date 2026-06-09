@@ -5,6 +5,21 @@ export function readEnv(name: string, fallback = ''): string {
   return value === undefined || value === '' ? fallback : value;
 }
 
+/**
+ * Returns the first non-empty value among several candidate env var names.
+ * Lets us accept more than one naming convention for the same setting (e.g. an
+ * earlier payment integration used `VTB_USER_NAME`/`VTB_PASSWORD` while the
+ * current one uses `VTB_API_USERNAME`/`VTB_API_PASSWORD`) so a server configured
+ * under either scheme keeps working.
+ */
+export function readEnvAny(names: string[], fallback = ''): string {
+  for (const name of names) {
+    const value = process.env[name];
+    if (value !== undefined && value !== '') return value;
+  }
+  return fallback;
+}
+
 export function readPort(): number {
   const raw = readEnv('PORT', '8080');
   const port = Number(raw);
@@ -89,17 +104,17 @@ export function readVtbApiBaseUrl(): string {
 
 /** Merchant API login (`-api` account). Empty when not configured. */
 export function readVtbApiUserName(): string {
-  return readEnv('VTB_API_USERNAME').trim();
+  return readEnvAny(['VTB_API_USERNAME', 'VTB_USER_NAME', 'VTB_USERNAME']).trim();
 }
 
 /** Merchant API password. Empty when not configured. */
 export function readVtbApiPassword(): string {
-  return readEnv('VTB_API_PASSWORD').trim();
+  return readEnvAny(['VTB_API_PASSWORD', 'VTB_PASSWORD']).trim();
 }
 
 /** Optional open token used instead of userName/password. */
 export function readVtbApiToken(): string {
-  return readEnv('VTB_API_TOKEN').trim();
+  return readEnvAny(['VTB_API_TOKEN', 'VTB_TOKEN']).trim();
 }
 
 /** ISO 4217 numeric currency code. KZT (398) by default. */
@@ -112,7 +127,7 @@ export function readVtbCurrency(): string {
  * KZT has 100 tiyin, so the gateway `amount` is `credits * 100`.
  */
 export function readVtbMinorUnitsPerCredit(): number {
-  const raw = readEnv('VTB_MINOR_UNITS_PER_CREDIT', '100');
+  const raw = readEnvAny(['VTB_MINOR_UNITS_PER_CREDIT', 'VTB_KZT_MINOR_UNITS_PER_OWK'], '100');
   const value = Number(raw);
   return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 100;
 }
@@ -125,7 +140,7 @@ export function readVtbLanguage(): string {
 
 /** Order lifetime in seconds passed to register.do (gateway default 1200). */
 export function readVtbSessionTimeoutSecs(): number {
-  const raw = readEnv('VTB_SESSION_TIMEOUT_SECS', '1200');
+  const raw = readEnvAny(['VTB_SESSION_TIMEOUT_SECS', 'VTB_SESSION_TIMEOUT_SECONDS'], '1200');
   const value = Number(raw);
   return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 1200;
 }
