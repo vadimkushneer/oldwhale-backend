@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, ForbiddenException, HttpException, HttpStatus, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadGatewayException, BadRequestException, ConflictException, ForbiddenException, HttpException, HttpStatus, NotFoundException, ServiceUnavailableException, UnauthorizedException } from '@nestjs/common';
 
 export function badRequest(message: string): never {
   throw new BadRequestException({ error: message });
@@ -23,4 +23,14 @@ export function notFound(message = 'Not found'): never {
 
 export function conflict(message: string): never {
   throw new ConflictException({ error: message });
+}
+
+/** 502 — the upstream payment gateway returned an error or was unreachable. */
+export function badGateway(message: string): never {
+  throw new BadGatewayException({ error: message });
+}
+
+/** 503 — a dependency (e.g. payment gateway) is not configured/available. */
+export function serviceUnavailable(message: string): never {
+  throw new ServiceUnavailableException({ error: message });
 }

@@ -13,6 +13,7 @@ tags:
   - name: Health
   - name: Auth
   - name: Me
+  - name: Payments
   - name: AiModels
   - name: Admin
 
@@ -145,6 +146,102 @@ paths:
         "200": { description: Updated user, content: { application/json: { schema: { $ref: "#/components/schemas/User" } } } }
         "400": { description: Invalid amount, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
         "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Free top-up disabled (use the payment flow), content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/me/payments:
+    post:
+      tags: [Payments]
+      operationId: createPayment
+      summary: Register a VTB top-up order and obtain the hosted payment page URL.
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PaymentCreateRequest" }
+      responses:
+        "201": { description: Registered payment, content: { application/json: { schema: { $ref: "#/components/schemas/Payment" } } } }
+        "400": { description: Invalid credits amount, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "502": { description: Gateway rejected or was unreachable, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "503": { description: Payment gateway not configured, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+    get:
+      tags: [Payments]
+      operationId: listMyPayments
+      summary: List the current account's recent payments.
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200": { description: Payment list, content: { application/json: { schema: { $ref: "#/components/schemas/PaymentListResponse" } } } }
+        "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/me/payments/{uid}:
+    get:
+      tags: [Payments]
+      operationId: getMyPayment
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: uid, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Payment, content: { application/json: { schema: { $ref: "#/components/schemas/Payment" } } } }
+        "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/me/payments/{uid}/sync:
+    post:
+      tags: [Payments]
+      operationId: syncMyPayment
+      summary: Re-check the authoritative gateway status; grants credits if paid.
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: uid, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Payment + refreshed user, content: { application/json: { schema: { $ref: "#/components/schemas/PaymentSyncResponse" } } } }
+        "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "503": { description: Payment gateway not configured, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/payments/vtb/callback:
+    post:
+      tags: [Payments]
+      operationId: vtbCallbackPost
+      summary: VTB gateway payment callback (webhook). No auth; verified by checksum + status re-check.
+      responses:
+        "200": { description: Acknowledged (always 200 to stop gateway retries) }
+    get:
+      tags: [Payments]
+      operationId: vtbCallbackGet
+      summary: VTB gateway payment callback (GET variant).
+      responses:
+        "200": { description: Acknowledged }
+
+  /api/admin/payments:
+    get:
+      tags: [Payments]
+      operationId: adminListPayments
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: limit, in: query, required: false, schema: { type: integer } }
+        - { name: offset, in: query, required: false, schema: { type: integer } }
+        - { name: status, in: query, required: false, schema: { type: string } }
+        - { name: user_uid, in: query, required: false, schema: { type: string } }
+      responses:
+        "200": { description: Payments page, content: { application/json: { schema: { $ref: "#/components/schemas/PaymentAdminListResponse" } } } }
+        "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Forbidden, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/admin/payments/{uid}/events:
+    get:
+      tags: [Payments]
+      operationId: adminPaymentEvents
+      summary: Full audit trail for one payment (forensics).
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - { name: uid, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Payment + events, content: { application/json: { schema: { $ref: "#/components/schemas/PaymentEventsResponse" } } } }
+        "401": { description: Unauthorized, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "403": { description: Forbidden, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "404": { description: Not found, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
 
   /api/ai/models:
     get:
@@ -616,6 +713,77 @@ components:
       required: [amount]
       properties:
         amount: { type: integer, minimum: 1, maximum: 100000, description: "Krill (OWK) to add to the current account." }
+
+    PaymentCreateRequest:
+      type: object
+      required: [credits]
+      properties:
+        credits: { type: integer, minimum: 1, maximum: 1000000, description: "OWK to purchase (1 OWK = 1 KZT)." }
+
+    Payment:
+      type: object
+      required: [uid, orderNumber, credits, amountMinor, currency, status, createdAt, updatedAt]
+      properties:
+        uid: { type: string, description: "Local payment id (also the gateway orderNumber correlation)." }
+        orderNumber: { type: string }
+        credits: { type: integer, description: "OWK to grant on success." }
+        amountMinor: { type: integer, description: "Gateway amount in minor units (tiyin)." }
+        currency: { type: string, description: "ISO 4217 numeric (398 = KZT)." }
+        status:
+          type: string
+          enum: [created, registered, pending, paid, failed, canceled, refunded]
+        gatewayOrderId: { type: string, nullable: true }
+        formUrl: { type: string, nullable: true, description: "Hosted payment page to redirect to (when registered)." }
+        orderStatus: { type: integer, nullable: true, description: "Last numeric gateway orderStatus (2 = paid)." }
+        actionCode: { type: string, nullable: true }
+        errorCode: { type: string, nullable: true }
+        errorMessage: { type: string, nullable: true }
+        creditedAt: { type: string, nullable: true }
+        expiresAt: { type: string, nullable: true }
+        createdAt: { type: string }
+        updatedAt: { type: string }
+
+    PaymentListResponse:
+      type: object
+      required: [payments]
+      properties:
+        payments:
+          type: array
+          items: { $ref: "#/components/schemas/Payment" }
+
+    PaymentSyncResponse:
+      type: object
+      required: [payment, user]
+      properties:
+        payment: { $ref: "#/components/schemas/Payment" }
+        user: { $ref: "#/components/schemas/User" }
+
+    PaymentAdminListResponse:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Payment" }
+        total: { type: integer }
+
+    PaymentEvent:
+      type: object
+      properties:
+        type: { type: string }
+        level: { type: string, enum: [info, warn, error] }
+        message: { type: string }
+        detail_json: { type: string, nullable: true }
+        created_at: { type: string }
+
+    PaymentEventsResponse:
+      type: object
+      required: [payment, events]
+      properties:
+        payment: { $ref: "#/components/schemas/Payment" }
+        events:
+          type: array
+          items: { $ref: "#/components/schemas/PaymentEvent" }
 
     AuthTokenResponse:
       type: object

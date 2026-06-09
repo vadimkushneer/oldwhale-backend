@@ -9,6 +9,7 @@ import { DatabaseModule } from './database/database.module';
 import { HealthModule } from './health/health.module';
 import { JobsModule } from './jobs/jobs.module';
 import { LlmModule } from './llm/llm.module';
+import { PaymentsModule } from './payments/payments.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { LlmModule } from './llm/llm.module';
     AdminModule,
     AiModule,
     LlmModule,
+    PaymentsModule,
     HealthModule,
   ],
   controllers: [AppController],

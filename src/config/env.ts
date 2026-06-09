@@ -76,3 +76,99 @@ export function corsOrigin(): boolean | string[] {
 function corsOriginValue(): string {
   return process.env.CORS_ORIGIN ?? '';
 }
+
+/* ------------------------------------------------------------------ */
+/* VTB Kazakhstan eCommerce gateway (RBS platform) payment integration */
+/* ------------------------------------------------------------------ */
+
+/** REST base URL of the gateway, trailing slash guaranteed. Sandbox by default. */
+export function readVtbApiBaseUrl(): string {
+  const raw = readEnv('VTB_API_BASE_URL', 'https://vtbkz.rbsuat.com/payment/rest/').trim();
+  return raw.endsWith('/') ? raw : `${raw}/`;
+}
+
+/** Merchant API login (`-api` account). Empty when not configured. */
+export function readVtbApiUserName(): string {
+  return readEnv('VTB_API_USERNAME').trim();
+}
+
+/** Merchant API password. Empty when not configured. */
+export function readVtbApiPassword(): string {
+  return readEnv('VTB_API_PASSWORD').trim();
+}
+
+/** Optional open token used instead of userName/password. */
+export function readVtbApiToken(): string {
+  return readEnv('VTB_API_TOKEN').trim();
+}
+
+/** ISO 4217 numeric currency code. KZT (398) by default. */
+export function readVtbCurrency(): string {
+  return readEnv('VTB_CURRENCY', '398').trim();
+}
+
+/**
+ * Minor currency units per 1 OWK credit. The product rule is 1 OWK = 1 KZT and
+ * KZT has 100 tiyin, so the gateway `amount` is `credits * 100`.
+ */
+export function readVtbMinorUnitsPerCredit(): number {
+  const raw = readEnv('VTB_MINOR_UNITS_PER_CREDIT', '100');
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 100;
+}
+
+/** Payment page language (ISO 639-1): ru, en, hy, az. */
+export function readVtbLanguage(): string {
+  const raw = readEnv('VTB_LANGUAGE', 'ru').trim().toLowerCase();
+  return /^(ru|en|hy|az)$/.test(raw) ? raw : 'ru';
+}
+
+/** Order lifetime in seconds passed to register.do (gateway default 1200). */
+export function readVtbSessionTimeoutSecs(): number {
+  const raw = readEnv('VTB_SESSION_TIMEOUT_SECS', '1200');
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 1200;
+}
+
+/** Optional shared symmetric key for HMAC-SHA256 callback checksum verification. */
+export function readVtbCallbackChecksumKey(): string {
+  return readEnv('VTB_CALLBACK_CHECKSUM_KEY').trim();
+}
+
+/**
+ * Public, internet-reachable base URL of THIS backend, used to build the
+ * per-order `dynamicCallbackUrl`. When empty no dynamic callback URL is sent
+ * (the gateway may still use a statically configured callback).
+ */
+export function readPublicApiBaseUrl(): string {
+  return readEnv('PUBLIC_API_BASE_URL').replace(/\/+$/, '');
+}
+
+/** SPA path the gateway returns the payer to; the local payment id is appended. */
+export function readVtbReturnPath(): string {
+  const raw = readEnv('VTB_RETURN_PATH', '/payment/return').trim();
+  return raw.startsWith('/') ? raw : `/${raw}`;
+}
+
+/** Network timeout (ms) for gateway HTTP calls. */
+export function readVtbHttpTimeoutMs(): number {
+  const raw = readEnv('VTB_HTTP_TIMEOUT_MS', '15000');
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? Math.trunc(value) : 15000;
+}
+
+/** True when enough is configured to talk to the gateway. */
+export function isVtbConfigured(): boolean {
+  const hasUserPass = Boolean(readVtbApiUserName() && readVtbApiPassword());
+  const hasToken = Boolean(readVtbApiToken());
+  return Boolean(readVtbApiBaseUrl()) && (hasUserPass || hasToken);
+}
+
+/**
+ * When true, the legacy `POST /api/me/credits/topup` endpoint grants credits
+ * for free (no gateway). Intended ONLY for local development without VTB
+ * credentials; disabled by default so production cannot mint free credits.
+ */
+export function readDevFreeTopupEnabled(): boolean {
+  return /^(1|true|yes)$/i.test(readEnv('DEV_FREE_TOPUP_ENABLED', '').trim());
+}
