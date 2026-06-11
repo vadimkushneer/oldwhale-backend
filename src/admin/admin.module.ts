@@ -5,6 +5,8 @@ import { AdminUsersController } from './admin-users.controller';
 import { AdminEmailDeliveryLogsController } from './admin-email-delivery-logs.controller';
 import { AdminUiSettingsController } from './admin-ui-settings.controller';
 import { AdminUiSettingsService } from './admin-ui-settings.service';
+import { HostingDeployBranchesController } from './hosting-deploy-branches.controller';
+import { HostingDeployBranchesService } from './hosting-deploy-branches.service';
 
 @Module({
   imports: [AuthModule, DatabaseModule],
@@ -12,7 +14,8 @@ import { AdminUiSettingsService } from './admin-ui-settings.service';
     AdminUsersController,
     AdminEmailDeliveryLogsController,
     AdminUiSettingsController,
+    HostingDeployBranchesController,
   ],
-  providers: [AdminUiSettingsService],
+  providers: [AdminUiSettingsService, HostingDeployBranchesService],
 })
 export class AdminModule {}

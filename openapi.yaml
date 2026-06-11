@@ -365,6 +365,44 @@ paths:
         "200": { description: UI settings, content: { application/json: { schema: { $ref: "#/components/schemas/AdminUiSettingsResponse" } } } }
         "400": { description: Invalid request, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
 
+  /api/admin/hosting/deploy-branches:
+    get:
+      tags: [Admin]
+      operationId: getAdminHostingDeployBranches
+      security: [{ BearerAuth: [] }]
+      responses:
+        "200": { description: Deploy branches, content: { application/json: { schema: { $ref: "#/components/schemas/HostingDeployBranchesResponse" } } } }
+    put:
+      tags: [Admin]
+      operationId: putAdminHostingDeployBranches
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/HostingDeployBranchesPutRequest" }
+      responses:
+        "200": { description: Deploy branches, content: { application/json: { schema: { $ref: "#/components/schemas/HostingDeployBranchesResponse" } } } }
+        "400": { description: Invalid request, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "502": { description: GitHub unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
+  /api/admin/hosting/repo-branches:
+    get:
+      tags: [Admin]
+      operationId: getAdminHostingRepoBranches
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - name: repo
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [backend, frontend]
+      responses:
+        "200": { description: Branch names, content: { application/json: { schema: { $ref: "#/components/schemas/HostingRepoBranchesResponse" } } } }
+        "400": { description: Invalid request, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+        "502": { description: GitHub unavailable, content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } } }
+
   /api/admin/ai/env-check:
     post:
       tags: [AiModels]
@@ -992,6 +1030,28 @@ components:
             columns:
               type: object
               additionalProperties: { type: boolean }
+
+    HostingDeployBranchesResponse:
+      type: object
+      required: [backendBranch, frontendBranch, updatedAt]
+      properties:
+        backendBranch: { type: string }
+        frontendBranch: { type: string }
+        updatedAt: { type: string, format: date-time, nullable: true }
+
+    HostingDeployBranchesPutRequest:
+      type: object
+      properties:
+        backendBranch: { type: string }
+        frontendBranch: { type: string }
+
+    HostingRepoBranchesResponse:
+      type: object
+      required: [branches]
+      properties:
+        branches:
+          type: array
+          items: { type: string }
 
     AiChatLogListResponse:
       type: object

@@ -187,3 +187,25 @@ export function isVtbConfigured(): boolean {
 export function readDevFreeTopupEnabled(): boolean {
   return /^(1|true|yes)$/i.test(readEnv('DEV_FREE_TOPUP_ENABLED', '').trim());
 }
+
+/* ------------------------------------------------------------------ */
+/* Hosting auto-deploy branch configuration                           */
+/* ------------------------------------------------------------------ */
+
+/** JSON file read by the backend API and the server deploy script. */
+export function readHostingDeployBranchesPath(): string {
+  return readEnv('HOSTING_DEPLOY_BRANCHES_PATH', join(process.cwd(), 'data', 'deploy-branches.json'));
+}
+
+/** Optional GitHub token for listing remote branches (higher rate limits). */
+export function readGithubToken(): string {
+  return readEnv('GITHUB_TOKEN').trim();
+}
+
+export function readHostingBackendRepo(): string {
+  return readEnv('HOSTING_BACKEND_REPO', 'vadimkushneer/oldwhale-backend');
+}
+
+export function readHostingFrontendRepo(): string {
+  return readEnv('HOSTING_FRONTEND_REPO', 'vadimkushneer/oldwhale-frontend');
+}
