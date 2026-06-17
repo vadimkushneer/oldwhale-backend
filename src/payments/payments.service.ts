@@ -4,9 +4,9 @@ import { badGateway, badRequest, notFound, serviceUnavailable } from '../common/
 import { nowIso } from '../common/time';
 import {
   isVtbConfigured,
-  readApiPublicBaseUrl,
   readFrontendBaseUrl,
   readVtbCallbackSecret,
+  readVtbDynamicCallbackUrl,
 } from '../config/env';
 import { SqliteService } from '../database/sqlite.service';
 import { UsersService } from '../users/users.service';
@@ -64,7 +64,7 @@ export class PaymentsService {
     );
     this.logEvent(uid, 'created', 'Payment record created', { credits: amount, amountMinor });
 
-    const callbackUrl = `${readApiPublicBaseUrl()}/api/payments/vtb/callback`;
+    const callbackUrl = readVtbDynamicCallbackUrl();
     const gatewayResult = await this.vtb.registerOrder({
       orderNumber: uid,
       amountMinor,
@@ -72,7 +72,7 @@ export class PaymentsService {
       returnUrl,
       failUrl,
       description: `Old Whale Krill top-up: ${amount} OWK`,
-      dynamicCallbackUrl: callbackUrl,
+      ...(callbackUrl ? { dynamicCallbackUrl: callbackUrl } : {}),
     });
 
     if ('formUrl' in gatewayResult && gatewayResult.orderId && gatewayResult.formUrl) {
@@ -272,10 +272,11 @@ export class PaymentsService {
 
   private logEvent(paymentUid: string, eventType: string, message: string, detail?: unknown): void {
     const detailJson = detail ? JSON.stringify(detail) : null;
+    const now = nowIso();
     this.db.run(
-      `INSERT INTO payment_events (payment_uid, event_type, message, detail_json, created_at)
-       VALUES (?, ?, ?, ?, ?)`,
-      [paymentUid, eventType, message, detailJson, nowIso()],
+      `INSERT INTO payment_events (uid, payment_uid, type, level, message, detail_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [crypto.randomUUID(), paymentUid, eventType, 'info', message, detailJson, now],
     );
     this.logger.log(`[payment:${paymentUid}] ${eventType}: ${message}`);
   }

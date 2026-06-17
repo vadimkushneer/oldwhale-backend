@@ -110,11 +110,11 @@ export function readVtbApiBaseUrl(): string {
 }
 
 export function readVtbMerchantUsername(): string {
-  return readEnv('VTB_MERCHANT_USERNAME').trim();
+  return readEnv('VTB_MERCHANT_USERNAME').trim() || readEnv('VTB_API_USERNAME').trim();
 }
 
 export function readVtbMerchantPassword(): string {
-  return readEnv('VTB_MERCHANT_PASSWORD').trim();
+  return readEnv('VTB_MERCHANT_PASSWORD').trim() || readEnv('VTB_API_PASSWORD').trim();
 }
 
 /** Optional HMAC key for verifying VTB checksum callbacks. */
@@ -124,6 +124,19 @@ export function readVtbCallbackSecret(): string {
 
 export function isVtbConfigured(): boolean {
   return Boolean(readVtbMerchantUsername() && readVtbMerchantPassword());
+}
+
+/** Per-order VTB callback URL; omitted when no public HTTPS origin is configured. */
+export function readVtbDynamicCallbackUrl(): string | undefined {
+  const explicit = readEnv('VTB_DYNAMIC_CALLBACK_URL').trim();
+  if (explicit) return explicit;
+  const apiPublic = readEnv('API_PUBLIC_BASE_URL').replace(/\/+$/, '');
+  if (apiPublic) return `${apiPublic}/api/payments/vtb/callback`;
+  const frontend = readFrontendBaseUrl();
+  if (/^https:\/\//i.test(frontend)) {
+    return `${frontend}/api/payments/vtb/callback`;
+  }
+  return undefined;
 }
 
 /** Public backend origin used for VTB server callbacks (no trailing slash). */
