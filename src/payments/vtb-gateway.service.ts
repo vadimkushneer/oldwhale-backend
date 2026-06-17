@@ -1,225 +1,125 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import {
   isVtbConfigured,
   readVtbApiBaseUrl,
-  readVtbApiPassword,
-  readVtbApiToken,
-  readVtbApiUserName,
-  readVtbHttpTimeoutMs,
+  readVtbMerchantPassword,
+  readVtbMerchantUsername,
 } from '../config/env';
-import { PaymentEventsService } from './payment-events.service';
-import { redactSecrets, summarizeError } from './redact';
+import { badGateway, serviceUnavailable } from '../common/http-error';
 
-export interface VtbRegisterInput {
+export interface VtbRegisterParams {
   orderNumber: string;
-  /** Amount in minor units (tiyin for KZT). */
-  amount: number;
-  currency: string;
+  amountMinor: number;
+  currency?: string;
   returnUrl: string;
   failUrl: string;
   description?: string;
   language?: string;
-  email?: string;
-  clientId?: string;
   dynamicCallbackUrl?: string;
-  sessionTimeoutSecs?: number;
 }
 
-export interface VtbRegisterResult {
-  ok: boolean;
-  orderId?: string;
-  formUrl?: string;
-  errorCode?: string;
-  errorMessage?: string;
-  httpStatus: number;
-  raw: unknown;
+export interface VtbRegisterSuccess {
+  orderId: string;
+  formUrl: string;
 }
 
-export interface VtbOrderStatusInput {
-  orderId?: string;
+export interface VtbGatewayError {
+  errorCode: string;
+  errorMessage: string;
+}
+
+export interface VtbOrderStatus {
   orderNumber?: string;
-  language?: string;
-}
-
-export interface VtbOrderStatusResult {
-  ok: boolean;
   orderStatus?: number;
-  actionCode?: string;
+  actionCode?: number;
   actionCodeDescription?: string;
   amount?: number;
   currency?: string;
-  orderNumber?: string;
   errorCode?: string;
   errorMessage?: string;
-  httpStatus: number;
-  raw: unknown;
+  paymentAmountInfo?: { paymentState?: string };
 }
 
-interface PostFormResult {
-  httpStatus: number;
-  json: Record<string, unknown> | null;
-  rawText: string;
-}
-
-/**
- * Thin HTTP client for the VTB Kazakhstan (RBS) REST gateway. Knows nothing
- * about our domain — it only builds form-encoded requests, attaches merchant
- * credentials, enforces a timeout, and parses the JSON envelope. Every call is
- * logged (request params redacted, response summarized) through
- * PaymentEventsService so a failed call is fully reconstructable from logs.
- */
 @Injectable()
 export class VtbGatewayService {
-  constructor(private readonly events: PaymentEventsService) {}
+  private readonly logger = new Logger(VtbGatewayService.name);
 
-  isConfigured(): boolean {
-    return isVtbConfigured();
+  assertConfigured(): void {
+    if (!isVtbConfigured()) {
+      serviceUnavailable('Payment gateway is not configured');
+    }
   }
 
-  async register(paymentUid: string, input: VtbRegisterInput): Promise<VtbRegisterResult> {
-    const params: Record<string, string> = {
-      orderNumber: input.orderNumber,
-      amount: String(input.amount),
-      currency: input.currency,
-      returnUrl: input.returnUrl,
-      failUrl: input.failUrl,
-    };
-    if (input.description) params.description = input.description;
-    if (input.language) params.language = input.language;
-    if (input.email) params.email = input.email;
-    if (input.clientId) params.clientId = input.clientId;
-    if (input.dynamicCallbackUrl) params.dynamicCallbackUrl = input.dynamicCallbackUrl;
-    if (input.sessionTimeoutSecs) params.sessionTimeoutSecs = String(input.sessionTimeoutSecs);
-
-    const result = await this.postForm(paymentUid, 'register.do', params);
-    const json = result.json ?? {};
-    const errorCode = normalizeCode(json.errorCode);
-    const formUrl = typeof json.formUrl === 'string' ? json.formUrl : undefined;
-    const orderId = typeof json.orderId === 'string' ? json.orderId : undefined;
-    const ok = Boolean(formUrl) && (errorCode === undefined || errorCode === '0');
-
-    return {
-      ok,
-      orderId,
-      formUrl,
-      errorCode,
-      errorMessage: asString(json.errorMessage),
-      httpStatus: result.httpStatus,
-      raw: redactSecrets(json),
-    };
-  }
-
-  async getOrderStatus(paymentUid: string, input: VtbOrderStatusInput): Promise<VtbOrderStatusResult> {
-    const params: Record<string, string> = {};
-    if (input.orderId) params.orderId = input.orderId;
-    if (input.orderNumber) params.orderNumber = input.orderNumber;
-    if (input.language) params.language = input.language;
-
-    const result = await this.postForm(paymentUid, 'getOrderStatusExtended.do', params);
-    const json = result.json ?? {};
-    const errorCode = normalizeCode(json.errorCode);
-    const ok = errorCode === undefined || errorCode === '0';
-
-    return {
-      ok,
-      orderStatus: asNumber(json.orderStatus),
-      actionCode: normalizeCode(json.actionCode),
-      actionCodeDescription: asString(json.actionCodeDescription),
-      amount: asNumber(json.amount),
-      currency: asString(json.currency),
-      orderNumber: asString(json.orderNumber),
-      errorCode,
-      errorMessage: asString(json.errorMessage),
-      httpStatus: result.httpStatus,
-      raw: redactSecrets(json),
-    };
-  }
-
-  /** Adds auth fields without ever exposing them to callers or logs. */
-  private authParams(): Record<string, string> {
-    const token = readVtbApiToken();
-    if (token) return { token };
-    return { userName: readVtbApiUserName(), password: readVtbApiPassword() };
-  }
-
-  private async postForm(
-    paymentUid: string,
-    endpoint: string,
-    params: Record<string, string>,
-  ): Promise<PostFormResult> {
-    const url = `${readVtbApiBaseUrl()}${endpoint}`;
-    const body = new URLSearchParams({ ...this.authParams(), ...params });
-    const timeoutMs = readVtbHttpTimeoutMs();
-
-    // Log the request with credentials redacted; never log the encoded body string.
-    this.events.record(paymentUid, `gateway.${endpoint}.request`, `POST ${endpoint}`, {
-      url,
-      params: redactSecrets({ ...this.authParams(), ...params }),
-      timeoutMs,
+  async registerOrder(params: VtbRegisterParams): Promise<VtbRegisterSuccess | VtbGatewayError> {
+    this.assertConfigured();
+    const body = new URLSearchParams({
+      userName: readVtbMerchantUsername(),
+      password: readVtbMerchantPassword(),
+      orderNumber: params.orderNumber,
+      amount: String(params.amountMinor),
+      currency: params.currency ?? '398',
+      returnUrl: params.returnUrl,
+      failUrl: params.failUrl,
+      description: params.description ?? 'Old Whale Krill top-up',
+      language: params.language ?? 'ru',
     });
+    if (params.dynamicCallbackUrl) {
+      body.set('dynamicCallbackUrl', params.dynamicCallbackUrl);
+    }
+    return this.postJson<VtbRegisterSuccess | VtbGatewayError>('register.do', body);
+  }
 
-    const startedAt = Date.now();
+  async getOrderStatusExtended(gatewayOrderId: string): Promise<VtbOrderStatus> {
+    this.assertConfigured();
+    const body = new URLSearchParams({
+      userName: readVtbMerchantUsername(),
+      password: readVtbMerchantPassword(),
+      orderId: gatewayOrderId,
+      language: 'ru',
+    });
+    return this.postJson<VtbOrderStatus>('getOrderStatusExtended.do', body);
+  }
+
+  private async postJson<T>(endpoint: string, body: URLSearchParams): Promise<T> {
+    const url = `${readVtbApiBaseUrl()}${endpoint}`;
     let response: Response;
     try {
       response = await fetch(url, {
         method: 'POST',
-        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: body.toString(),
-        signal: AbortSignal.timeout(timeoutMs),
       });
     } catch (error) {
-      const durationMs = Date.now() - startedAt;
-      this.events.record(
-        paymentUid,
-        `gateway.${endpoint}.transport_error`,
-        `transport error after ${durationMs}ms`,
-        { error: summarizeError(error), durationMs },
-        'error',
-      );
-      throw error;
+      this.logger.error(`VTB request failed: ${endpoint}`, error);
+      badGateway('Payment gateway is unreachable');
     }
 
-    const durationMs = Date.now() - startedAt;
-    const rawText = await response.text();
-    let json: Record<string, unknown> | null = null;
+    const text = await response.text();
+    let parsed: T;
     try {
-      json = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : null;
+      parsed = JSON.parse(text) as T;
     } catch {
-      json = null;
+      this.logger.error(`VTB invalid JSON (${response.status}): ${text.slice(0, 500)}`);
+      badGateway('Payment gateway returned an invalid response');
     }
 
-    this.events.record(
-      paymentUid,
-      `gateway.${endpoint}.response`,
-      `HTTP ${response.status} in ${durationMs}ms`,
-      {
-        httpStatus: response.status,
-        durationMs,
-        body: json ? redactSecrets(json) : truncate(rawText, 1000),
-      },
-      response.ok ? 'info' : 'warn',
-    );
+    if (!response.ok) {
+      this.logger.error(`VTB HTTP ${response.status}: ${text.slice(0, 500)}`);
+      badGateway('Payment gateway error');
+    }
 
-    return { httpStatus: response.status, json, rawText };
+    return parsed;
   }
 }
 
-function normalizeCode(value: unknown): string | undefined {
-  if (value === undefined || value === null || value === '') return undefined;
-  return String(value);
+/** Returns true when the gateway reports a captured or pre-authorized payment. */
+export function isVtbOrderPaid(orderStatus: number | undefined | null): boolean {
+  return orderStatus === 1 || orderStatus === 2;
 }
 
-function asString(value: unknown): string | undefined {
-  if (value === undefined || value === null) return undefined;
-  return String(value);
-}
-
-function asNumber(value: unknown): number | undefined {
-  if (value === undefined || value === null || value === '') return undefined;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : undefined;
-}
-
-function truncate(text: string, max: number): string {
-  return text.length > max ? `${text.slice(0, max)}…` : text;
+export function isVtbGatewaySuccess(payload: { errorCode?: string; success?: boolean }): boolean {
+  if (payload.success === true) return true;
+  if (payload.success === false) return false;
+  if (payload.errorCode === undefined || payload.errorCode === '') return true;
+  return payload.errorCode === '0';
 }

@@ -217,26 +217,24 @@ export class SqliteService implements OnModuleInit {
         FOREIGN KEY (llm_group_uid) REFERENCES llm_groups(uid) ON DELETE CASCADE
       );
 
-      -- VTB Kazakhstan eCommerce payments: one row per credit (OWK) top-up attempt.
       CREATE TABLE IF NOT EXISTS payments (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        uid TEXT NOT NULL UNIQUE,
-        order_number TEXT NOT NULL UNIQUE,
+        uid TEXT PRIMARY KEY,
         user_uid TEXT NOT NULL,
+        order_number TEXT NOT NULL UNIQUE,
+        gateway_order_id TEXT,
         credits INTEGER NOT NULL,
         amount_minor INTEGER NOT NULL,
-        currency TEXT NOT NULL,
+        currency TEXT NOT NULL DEFAULT '398',
         status TEXT NOT NULL,
-        gateway_order_id TEXT,
         form_url TEXT,
-        return_url TEXT,
-        fail_url TEXT,
+        return_url TEXT NOT NULL,
+        fail_url TEXT NOT NULL,
         order_status INTEGER,
-        action_code TEXT,
+        action_code INTEGER,
         error_code TEXT,
         error_message TEXT,
-        raw_last_gateway_response TEXT,
         credited_at TEXT,
+        raw_last_gateway_response TEXT,
         expires_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -246,19 +244,13 @@ export class SqliteService implements OnModuleInit {
       CREATE INDEX IF NOT EXISTS idx_payments_user_created
         ON payments (user_uid, created_at);
 
-      CREATE INDEX IF NOT EXISTS idx_payments_gateway_order
+      CREATE INDEX IF NOT EXISTS idx_payments_gateway_order_id
         ON payments (gateway_order_id);
 
-      CREATE INDEX IF NOT EXISTS idx_payments_status_created
-        ON payments (status, created_at);
-
-      -- Append-only audit trail mirrored to stdout logs for forensic debugging.
       CREATE TABLE IF NOT EXISTS payment_events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        uid TEXT NOT NULL UNIQUE,
         payment_uid TEXT NOT NULL,
-        type TEXT NOT NULL,
-        level TEXT NOT NULL,
+        event_type TEXT NOT NULL,
         message TEXT NOT NULL,
         detail_json TEXT,
         created_at TEXT NOT NULL,

@@ -1,460 +1,310 @@
 import crypto from 'node:crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { badGateway, badRequest, notFound, serviceUnavailable } from '../common/http-error';
-import { nowIso, toInt } from '../common/time';
+import { nowIso } from '../common/time';
 import {
+  isVtbConfigured,
+  readApiPublicBaseUrl,
   readFrontendBaseUrl,
-  readPublicApiBaseUrl,
-  readVtbCallbackChecksumKey,
-  readVtbCurrency,
-  readVtbLanguage,
-  readVtbMinorUnitsPerCredit,
-  readVtbReturnPath,
-  readVtbSessionTimeoutSecs,
+  readVtbCallbackSecret,
 } from '../config/env';
-import { SqliteService, type SqlParam } from '../database/sqlite.service';
+import { SqliteService } from '../database/sqlite.service';
 import { UsersService } from '../users/users.service';
 import type { PublicUser } from '../users/users.types';
-import { PaymentEventsService } from './payment-events.service';
-import { redactSecrets } from './redact';
-import type { PaymentRow, PaymentStatus, PublicPayment } from './payments.types';
-import type { VtbOrderStatusResult, VtbRegisterResult } from './vtb-gateway.service';
-import { VtbGatewayService } from './vtb-gateway.service';
+import type {
+  PaymentCreateResponse,
+  PaymentPublic,
+  PaymentRow,
+  PaymentStatus,
+  PaymentSyncResponse,
+} from './payments.types';
+import {
+  isVtbGatewaySuccess,
+  isVtbOrderPaid,
+  VtbGatewayService,
+  type VtbOrderStatus,
+} from './vtb-gateway.service';
 
-/** Smallest / largest single top-up in OWK (guards against typos and overflow). */
-const MIN_TOPUP_CREDITS = 1;
-const MAX_TOPUP_CREDITS = 1_000_000;
-
-/** Source label recorded on credit grants for forensic attribution. */
-type CreditSource = 'return-sync' | 'callback';
+const MAX_TOPUP_CREDITS = 100_000;
+const KZT_CURRENCY = '398';
+const SESSION_TIMEOUT_SECS = 1200;
 
 @Injectable()
 export class PaymentsService {
-  private readonly logger = new Logger('Payments');
+  private readonly logger = new Logger(PaymentsService.name);
 
   constructor(
     private readonly db: SqliteService,
     private readonly users: UsersService,
-    private readonly gateway: VtbGatewayService,
-    private readonly events: PaymentEventsService,
+    private readonly vtb: VtbGatewayService,
   ) {}
 
-  /**
-   * Registers a new top-up order on the gateway and returns the hosted payment
-   * page URL. The browser must then be redirected to `formUrl`.
-   */
-  async createPayment(user: PublicUser, creditsRequested: unknown): Promise<PublicPayment> {
-    const credits = this.validateCredits(creditsRequested);
-
-    if (!this.gateway.isConfigured()) {
-      this.logger.error(
-        `payment create rejected: VTB gateway not configured (set VTB_API_USERNAME/VTB_API_PASSWORD or VTB_API_TOKEN). user=${user.uid}`,
-      );
-      serviceUnavailable('Оплата временно недоступна. Платёжный шлюз не настроен.');
+  async createPayment(userUid: string, credits: number): Promise<PaymentCreateResponse> {
+    if (!isVtbConfigured()) {
+      serviceUnavailable('Payment gateway is not configured');
     }
+    const amount = Math.trunc(credits);
+    if (!Number.isFinite(amount) || amount <= 0) badRequest('credits must be a positive number');
+    if (amount > MAX_TOPUP_CREDITS) badRequest(`credits must not exceed ${MAX_TOPUP_CREDITS}`);
 
-    const minorPerCredit = readVtbMinorUnitsPerCredit();
-    const amountMinor = credits * minorPerCredit;
-    const currency = readVtbCurrency();
-    const now = nowIso();
     const uid = crypto.randomUUID();
-    const orderNumber = this.generateOrderNumber();
-    const returnUrl = this.buildReturnUrl(uid);
-    const failUrl = returnUrl;
-    const expiresAt = new Date(Date.now() + readVtbSessionTimeoutSecs() * 1000).toISOString();
+    const now = nowIso();
+    const amountMinor = amount * 100;
+    const frontendBase = readFrontendBaseUrl();
+    const returnUrl = `${frontendBase}/payment/return/${uid}`;
+    const failUrl = `${frontendBase}/payment/fail/${uid}`;
+    const expiresAt = new Date(Date.now() + SESSION_TIMEOUT_SECS * 1000).toISOString();
 
-    this.insertRow({
-      uid,
-      orderNumber,
-      userUid: user.uid,
-      credits,
+    this.db.run(
+      `INSERT INTO payments (
+        uid, user_uid, order_number, credits, amount_minor, currency, status,
+        return_url, fail_url, expires_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, 'created', ?, ?, ?, ?, ?)`,
+      [uid, userUid, uid, amount, amountMinor, KZT_CURRENCY, returnUrl, failUrl, expiresAt, now, now],
+    );
+    this.logEvent(uid, 'created', 'Payment record created', { credits: amount, amountMinor });
+
+    const callbackUrl = `${readApiPublicBaseUrl()}/api/payments/vtb/callback`;
+    const gatewayResult = await this.vtb.registerOrder({
+      orderNumber: uid,
       amountMinor,
-      currency,
+      currency: KZT_CURRENCY,
       returnUrl,
       failUrl,
-      expiresAt,
-      now,
+      description: `Old Whale Krill top-up: ${amount} OWK`,
+      dynamicCallbackUrl: callbackUrl,
     });
 
-    this.events.record(uid, 'payment.created', `created top-up of ${credits} OWK (${amountMinor} minor, cur=${currency}) for user ${user.uid}`, {
-      credits,
-      amountMinor,
-      currency,
-      orderNumber,
-    });
-
-    const dynamicCallbackUrl = this.buildCallbackUrl();
-
-    let result: VtbRegisterResult;
-    try {
-      result = await this.gateway.register(uid, {
-        orderNumber,
-        amount: amountMinor,
-        currency,
-        returnUrl,
-        failUrl,
-        description: `OldWhale ${credits} OWK`,
-        language: readVtbLanguage(),
-        email: user.email,
-        clientId: user.uid,
-        dynamicCallbackUrl,
-        sessionTimeoutSecs: readVtbSessionTimeoutSecs(),
-      });
-    } catch (error) {
-      this.markFailed(uid, 'GATEWAY_UNREACHABLE', String(error));
-      this.events.record(uid, 'register.transport_error', 'register.do did not complete', undefined, 'error');
-      badGateway('Не удалось связаться с платёжным шлюзом. Попробуйте позже.');
-    }
-
-    if (!result.ok || !result.formUrl) {
+    if ('formUrl' in gatewayResult && gatewayResult.orderId && gatewayResult.formUrl) {
       this.db.run(
-        `UPDATE payments SET status='failed', gateway_order_id=?, error_code=?, error_message=?, raw_last_gateway_response=?, updated_at=? WHERE uid=?`,
-        [result.orderId ?? null, result.errorCode ?? null, result.errorMessage ?? null, safeStringify(result.raw), nowIso(), uid],
+        `UPDATE payments SET
+          gateway_order_id = ?, form_url = ?, status = 'registered', updated_at = ?
+         WHERE uid = ?`,
+        [gatewayResult.orderId, gatewayResult.formUrl, nowIso(), uid],
       );
-      this.events.record(
-        uid,
-        'register.failed',
-        `register.do failed: errorCode=${result.errorCode ?? '?'} ${result.errorMessage ?? ''}`,
-        { httpStatus: result.httpStatus, errorCode: result.errorCode },
-        'error',
-      );
-      badGateway(result.errorMessage || 'Платёжный шлюз отклонил регистрацию заказа.');
+      this.logEvent(uid, 'registered', 'Order registered with VTB', {
+        gatewayOrderId: gatewayResult.orderId,
+      });
+      return { paymentId: uid, formUrl: gatewayResult.formUrl };
     }
 
+    const errorCode = 'errorCode' in gatewayResult ? gatewayResult.errorCode : 'unknown';
+    const errorMessage =
+      'errorMessage' in gatewayResult ? gatewayResult.errorMessage : 'Registration failed';
     this.db.run(
-      `UPDATE payments SET status='registered', gateway_order_id=?, form_url=?, error_code=NULL, error_message=NULL, raw_last_gateway_response=?, updated_at=? WHERE uid=?`,
-      [result.orderId ?? null, result.formUrl, safeStringify(result.raw), nowIso(), uid],
+      `UPDATE payments SET status = 'failed', error_code = ?, error_message = ?, updated_at = ? WHERE uid = ?`,
+      [errorCode, errorMessage, nowIso(), uid],
     );
-    this.events.record(uid, 'register.ok', `registered; gatewayOrderId=${result.orderId}`, {
-      gatewayOrderId: result.orderId,
-      formUrl: result.formUrl,
-    });
-
-    return this.serialize(this.requireRow(uid));
+    this.logEvent(uid, 'register_failed', errorMessage, { errorCode });
+    badGateway(errorMessage || 'Payment registration failed');
   }
 
-  /**
-   * Re-checks the authoritative order status on the gateway and, when paid,
-   * grants credits exactly once. Used by the SPA payment-return page.
-   */
-  async syncPayment(user: PublicUser, uid: string): Promise<{ payment: PublicPayment; user: PublicUser }> {
-    const row = this.requireUserRow(user.uid, uid);
-
-    if (row.credited_at) {
-      this.events.record(uid, 'sync.skip', 'already credited; returning cached state', undefined, 'info');
-      return { payment: this.serialize(row), user: this.refreshUser(user.uid) };
-    }
-
-    if (!this.gateway.isConfigured()) {
-      serviceUnavailable('Оплата временно недоступна. Платёжный шлюз не настроен.');
-    }
-
-    this.events.record(uid, 'sync.requested', `checking gateway status (source=return-sync) for user ${user.uid}`);
-    const status = await this.gateway.getOrderStatus(uid, {
-      orderId: row.gateway_order_id ?? undefined,
-      orderNumber: row.order_number,
-      language: readVtbLanguage(),
-    });
-    this.applyStatus(row, status, 'return-sync');
-
-    return { payment: this.serialize(this.requireRow(uid)), user: this.refreshUser(user.uid) };
+  getPaymentForUser(userUid: string, paymentId: string): PaymentPublic {
+    const row = this.requireOwnedPayment(userUid, paymentId);
+    return this.toPublic(row);
   }
 
-  /**
-   * Handles an asynchronous gateway callback. The callback is only a trigger:
-   * the credit decision is always re-derived from getOrderStatusExtended, so a
-   * forged callback cannot grant credits even if checksum verification is off.
-   */
-  async handleCallback(params: Record<string, unknown>): Promise<void> {
-    const flat = flattenParams(params);
-    const orderNumber = typeof flat.orderNumber === 'string' ? flat.orderNumber : undefined;
-    const mdOrder = typeof flat.mdOrder === 'string' ? flat.mdOrder : undefined;
-    const operation = typeof flat.operation === 'string' ? flat.operation : undefined;
-    const status = typeof flat.status === 'string' ? flat.status : undefined;
+  async syncPayment(userUid: string, paymentId: string): Promise<PaymentSyncResponse> {
+    const row = this.requireOwnedPayment(userUid, paymentId);
+    return this.syncRow(row, 'return_sync');
+  }
 
-    const row = this.findRowForCallback(orderNumber, mdOrder);
+  handleCallback(params: Record<string, string>): void {
+    if (!isVtbConfigured()) return;
+
+    const secret = readVtbCallbackSecret();
+    if (secret && !this.verifyCallbackChecksum(params, secret)) {
+      this.logger.warn('VTB callback checksum verification failed');
+      return;
+    }
+
+    const gatewayOrderId = params.mdOrder ?? params.orderId ?? '';
+    const orderNumber = params.orderNumber ?? '';
+    const operation = params.operation ?? '';
+    const status = params.status ?? '';
+
+    let row: PaymentRow | undefined;
+    if (gatewayOrderId) {
+      row = this.db.get<PaymentRow>('SELECT * FROM payments WHERE gateway_order_id = ?', [gatewayOrderId]);
+    }
+    if (!row && orderNumber) {
+      row = this.db.get<PaymentRow>('SELECT * FROM payments WHERE order_number = ?', [orderNumber]);
+    }
     if (!row) {
-      this.logger.warn(
-        `VTB callback for unknown order (orderNumber=${orderNumber ?? '?'}, mdOrder=${mdOrder ?? '?'}, operation=${operation ?? '?'}, status=${status ?? '?'}) — ignored`,
-      );
+      this.logger.warn(`VTB callback for unknown order: mdOrder=${gatewayOrderId} orderNumber=${orderNumber}`);
       return;
     }
 
-    this.events.record(row.uid, 'callback.received', `operation=${operation ?? '?'} status=${status ?? '?'}`, {
-      params: redactSecrets(flat),
-    });
+    this.logEvent(row.uid, 'callback', `operation=${operation} status=${status}`, this.redactParams(params));
 
-    if (!this.verifyChecksum(row.uid, flat)) {
-      // Verification failed — do not act on it. (verifyChecksum logs the reason.)
-      return;
-    }
+    const deposited = operation === 'deposited' && status === '1';
+    const declined =
+      operation === 'declinedByTimeout' ||
+      operation === 'declinedCardPresent' ||
+      (status === '0' && operation !== '');
 
-    if (row.credited_at) {
-      this.events.record(row.uid, 'callback.skip', 'already credited; acknowledging', undefined, 'info');
-      return;
-    }
-
-    if (!this.gateway.isConfigured()) {
-      this.events.record(row.uid, 'callback.no_gateway', 'cannot verify: gateway not configured', undefined, 'warn');
-      return;
-    }
-
-    const orderStatus = await this.gateway.getOrderStatus(row.uid, {
-      orderId: row.gateway_order_id ?? undefined,
-      orderNumber: row.order_number,
-      language: readVtbLanguage(),
-    });
-    this.applyStatus(row, orderStatus, 'callback');
-  }
-
-  listForUser(user: PublicUser): PublicPayment[] {
-    return this.db
-      .all<PaymentRow>('SELECT * FROM payments WHERE user_uid = ? ORDER BY id DESC LIMIT 100', [user.uid])
-      .map((row) => this.serialize(row));
-  }
-
-  getForUser(user: PublicUser, uid: string): PublicPayment {
-    return this.serialize(this.requireUserRow(user.uid, uid));
-  }
-
-  /** Admin: paginated list of all payments for support/forensics. */
-  listAll(query: Record<string, unknown>): { items: PublicPayment[]; total: number } {
-    const limit = Math.min(200, Math.max(1, toInt(query.limit, 50)));
-    const offset = Math.max(0, toInt(query.offset, 0));
-    const clauses: string[] = [];
-    const sqlParams: SqlParam[] = [];
-    if (typeof query.status === 'string' && query.status.trim()) {
-      clauses.push('status = ?');
-      sqlParams.push(query.status.trim());
-    }
-    if (typeof query.user_uid === 'string' && query.user_uid.trim()) {
-      clauses.push('user_uid = ?');
-      sqlParams.push(query.user_uid.trim());
-    }
-    const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
-    const items = this.db.all<PaymentRow>(
-      `SELECT * FROM payments ${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
-      [...sqlParams, limit, offset],
-    );
-    const total = this.db.get<{ total: number }>(`SELECT COUNT(*) AS total FROM payments ${where}`, sqlParams)?.total ?? 0;
-    return { items: items.map((row) => this.serialize(row)), total };
-  }
-
-  /** Admin: full audit trail for one payment. */
-  eventsFor(uid: string): { payment: PublicPayment; events: Array<Record<string, unknown>> } {
-    const row = this.requireRow(uid);
-    return { payment: this.serialize(row), events: this.events.list(uid) };
-  }
-
-  /* --------------------------- internals --------------------------- */
-
-  private applyStatus(row: PaymentRow, status: VtbOrderStatusResult, source: CreditSource): void {
-    const rawJson = safeStringify(status.raw);
-    const now = nowIso();
-
-    if (!status.ok) {
+    if (declined) {
       this.db.run(
-        `UPDATE payments SET order_status=?, action_code=?, error_code=?, error_message=?, raw_last_gateway_response=?, updated_at=? WHERE uid=? AND credited_at IS NULL`,
-        [status.orderStatus ?? row.order_status ?? null, status.actionCode ?? null, status.errorCode ?? null, status.errorMessage ?? null, rawJson, now, row.uid],
-      );
-      this.events.record(
-        row.uid,
-        'status.request_error',
-        `getOrderStatusExtended errorCode=${status.errorCode ?? '?'} ${status.errorMessage ?? ''} (source=${source})`,
-        undefined,
-        'warn',
+        `UPDATE payments SET status = 'failed', updated_at = ? WHERE uid = ? AND credited_at IS NULL`,
+        [nowIso(), row.uid],
       );
       return;
     }
 
-    const orderStatus = status.orderStatus;
-    if (orderStatus === 1 || orderStatus === 2) {
-      this.grantCredits(row, source, status, rawJson);
-      return;
-    }
-
-    const next: PaymentStatus =
-      orderStatus === 3 ? 'canceled' : orderStatus === 4 ? 'refunded' : orderStatus === 6 ? 'failed' : 'pending';
-    this.db.run(
-      `UPDATE payments SET status=?, order_status=?, action_code=?, error_code=?, error_message=?, raw_last_gateway_response=?, updated_at=? WHERE uid=? AND credited_at IS NULL`,
-      [next, orderStatus ?? null, status.actionCode ?? null, status.errorCode ?? null, status.errorMessage ?? null, rawJson, now, row.uid],
-    );
-    this.events.record(row.uid, 'status.updated', `orderStatus=${orderStatus ?? '?'} → ${next} (source=${source})`, {
-      orderStatus,
-      actionCode: status.actionCode,
-      actionCodeDescription: status.actionCodeDescription,
-    });
-  }
-
-  /** Idempotent: a single conditional UPDATE elects the one caller that credits. */
-  private grantCredits(row: PaymentRow, source: CreditSource, status: VtbOrderStatusResult, rawJson: string): void {
-    this.db.transaction(() => {
-      const ts = nowIso();
-      const res = this.db.run(
-        `UPDATE payments SET status='paid', credited_at=?, order_status=?, action_code=?, error_code=NULL, error_message=NULL, raw_last_gateway_response=?, updated_at=? WHERE uid=? AND credited_at IS NULL`,
-        [ts, status.orderStatus ?? null, status.actionCode ?? null, rawJson, ts, row.uid],
-      );
-      if (Number(res.changes) === 0) {
-        this.events.record(row.uid, 'credit.skipped', `already credited; source=${source}`, undefined, 'info');
-        return;
-      }
-      this.users.addCredits(row.user_uid, row.credits);
-      this.events.record(row.uid, 'credit.granted', `+${row.credits} OWK → user ${row.user_uid} (source=${source})`, {
-        credits: row.credits,
-        orderStatus: status.orderStatus,
+    if (deposited || gatewayOrderId) {
+      void this.syncRow(row, 'callback').catch((error) => {
+        this.logger.error(`VTB callback sync failed for ${row.uid}`, error);
       });
+    }
+  }
+
+  private async syncRow(row: PaymentRow, source: string): Promise<PaymentSyncResponse> {
+    if (row.credited_at) {
+      return { payment: this.toPublic(this.requirePayment(row.uid)) };
+    }
+
+    if (!row.gateway_order_id) {
+      return { payment: this.toPublic(row) };
+    }
+
+    const statusPayload = await this.vtb.getOrderStatusExtended(row.gateway_order_id);
+    const updated = this.applyGatewayStatus(row.uid, statusPayload, source);
+
+    if (isVtbOrderPaid(updated.order_status)) {
+      const user = this.creditIfPaid(updated.uid);
+      if (user) {
+        return { payment: this.toPublic(this.requirePayment(updated.uid)), user };
+      }
+    }
+
+    return { payment: this.toPublic(this.requirePayment(updated.uid)) };
+  }
+
+  private applyGatewayStatus(paymentUid: string, payload: VtbOrderStatus, source: string): PaymentRow {
+    const now = nowIso();
+    const orderStatus = payload.orderStatus ?? null;
+    const actionCode = payload.actionCode ?? null;
+    const gatewayOk = isVtbGatewaySuccess(payload);
+    let status: PaymentStatus = 'pending';
+
+    if (isVtbOrderPaid(orderStatus)) {
+      status = 'paid';
+    } else if (orderStatus === 6) {
+      status = 'failed';
+    } else if (orderStatus === 3) {
+      status = 'canceled';
+    } else if (orderStatus === 4) {
+      status = 'refunded';
+    } else if (!gatewayOk) {
+      status = 'failed';
+    } else if (orderStatus === 0 || orderStatus === 7) {
+      status = 'registered';
+    }
+
+    this.db.run(
+      `UPDATE payments SET
+        order_status = ?, action_code = ?, error_code = ?, error_message = ?,
+        status = ?, raw_last_gateway_response = ?, updated_at = ?
+       WHERE uid = ?`,
+      [
+        orderStatus,
+        actionCode,
+        payload.errorCode ?? null,
+        payload.errorMessage ?? null,
+        status,
+        JSON.stringify(this.redactGatewayPayload(payload)),
+        now,
+        paymentUid,
+      ],
+    );
+    this.logEvent(paymentUid, `status_${source}`, `orderStatus=${orderStatus ?? 'null'}`, {
+      actionCode,
+      status,
+    });
+    return this.requirePayment(paymentUid);
+  }
+
+  private creditIfPaid(paymentUid: string): PublicUser | undefined {
+    return this.db.transaction(() => {
+      const row = this.db.get<PaymentRow>('SELECT * FROM payments WHERE uid = ?', [paymentUid]);
+      if (!row || row.credited_at || !isVtbOrderPaid(row.order_status)) return undefined;
+
+      const now = nowIso();
+      const result = this.db.run(
+        `UPDATE payments SET credited_at = ?, status = 'paid', updated_at = ?
+         WHERE uid = ? AND credited_at IS NULL`,
+        [now, now, paymentUid],
+      );
+      if (Number(result.changes) === 0) return undefined;
+
+      const user = this.users.addCredits(row.user_uid, row.credits);
+      this.logEvent(paymentUid, 'credited', `Granted ${row.credits} OWK`, { userUid: row.user_uid });
+      this.logger.log(`Payment ${paymentUid}: credited ${row.credits} OWK to ${row.user_uid}`);
+      return user;
     });
   }
 
-  /**
-   * Verifies a checksum callback when a symmetric key is configured. Returns
-   * true (proceed) when the checksum is valid OR when verification is not
-   * applicable (no key configured / no checksum sent) — in that case the
-   * authoritative getOrderStatusExtended re-check still protects us.
-   */
-  private verifyChecksum(paymentUid: string, flat: Record<string, string>): boolean {
-    const key = readVtbCallbackChecksumKey();
-    const checksum = flat.checksum;
-    if (!key) {
-      this.events.record(paymentUid, 'callback.checksum.skipped', 'no shared key configured; relying on gateway re-check', undefined, 'info');
-      return true;
-    }
-    if (!checksum) {
-      this.events.record(paymentUid, 'callback.checksum.absent', 'key configured but callback had no checksum; relying on gateway re-check', undefined, 'warn');
-      return true;
-    }
-    const toSign = Object.entries(flat)
-      .filter(([k]) => k !== 'checksum' && k !== 'sign_alias')
-      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-      .map(([k, v]) => `${k};${v};`)
-      .join('');
-    const expected = crypto.createHmac('sha256', key).update(toSign, 'utf8').digest('hex').toUpperCase();
-    const got = checksum.toUpperCase();
-    const valid = expected.length === got.length && crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(got));
-    if (!valid) {
-      this.events.record(paymentUid, 'callback.checksum.fail', 'checksum mismatch — callback ignored', undefined, 'error');
-      return false;
-    }
-    this.events.record(paymentUid, 'callback.checksum.ok', 'checksum verified', undefined, 'info');
-    return true;
-  }
-
-  private validateCredits(value: unknown): number {
-    const credits = Math.trunc(Number(value));
-    if (!Number.isFinite(credits) || credits < MIN_TOPUP_CREDITS) {
-      badRequest(`credits must be an integer >= ${MIN_TOPUP_CREDITS}`);
-    }
-    if (credits > MAX_TOPUP_CREDITS) {
-      badRequest(`credits must not exceed ${MAX_TOPUP_CREDITS}`);
-    }
-    return credits;
-  }
-
-  private generateOrderNumber(): string {
-    // 'ow' + 28 hex chars = 30 chars, within the gateway's 36-char limit.
-    return `ow${crypto.randomBytes(14).toString('hex')}`;
-  }
-
-  private buildReturnUrl(uid: string): string {
-    const base = readFrontendBaseUrl();
-    const path = readVtbReturnPath().replace(/\/+$/, '');
-    return `${base}${path}/${uid}`;
-  }
-
-  private buildCallbackUrl(): string | undefined {
-    const base = readPublicApiBaseUrl();
-    if (!base) return undefined;
-    return `${base}/api/payments/vtb/callback`;
-  }
-
-  private insertRow(input: {
-    uid: string;
-    orderNumber: string;
-    userUid: string;
-    credits: number;
-    amountMinor: number;
-    currency: string;
-    returnUrl: string;
-    failUrl: string;
-    expiresAt: string;
-    now: string;
-  }): void {
-    this.db.run(
-      `INSERT INTO payments (uid, order_number, user_uid, credits, amount_minor, currency, status, return_url, fail_url, expires_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'created', ?, ?, ?, ?, ?)`,
-      [input.uid, input.orderNumber, input.userUid, input.credits, input.amountMinor, input.currency, input.returnUrl, input.failUrl, input.expiresAt, input.now, input.now],
-    );
-  }
-
-  private markFailed(uid: string, code: string, message: string): void {
-    this.db.run('UPDATE payments SET status=\'failed\', error_code=?, error_message=?, updated_at=? WHERE uid=?', [code, message.slice(0, 500), nowIso(), uid]);
-  }
-
-  private findRowForCallback(orderNumber?: string, mdOrder?: string): PaymentRow | undefined {
-    if (orderNumber) {
-      const byNumber = this.db.get<PaymentRow>('SELECT * FROM payments WHERE order_number = ?', [orderNumber]);
-      if (byNumber) return byNumber;
-    }
-    if (mdOrder) {
-      return this.db.get<PaymentRow>('SELECT * FROM payments WHERE gateway_order_id = ?', [mdOrder]);
-    }
-    return undefined;
-  }
-
-  private requireRow(uid: string): PaymentRow {
-    const row = this.db.get<PaymentRow>('SELECT * FROM payments WHERE uid = ?', [uid]);
-    if (!row) notFound(`payment "${uid}" not found`);
+  private requireOwnedPayment(userUid: string, paymentId: string): PaymentRow {
+    const row = this.db.get<PaymentRow>('SELECT * FROM payments WHERE uid = ?', [paymentId]);
+    if (!row) notFound('payment not found');
+    if (row.user_uid !== userUid) notFound('payment not found');
     return row;
   }
 
-  private requireUserRow(userUid: string, uid: string): PaymentRow {
-    const row = this.db.get<PaymentRow>('SELECT * FROM payments WHERE uid = ? AND user_uid = ?', [uid, userUid]);
-    if (!row) notFound(`payment "${uid}" not found`);
+  private requirePayment(paymentUid: string): PaymentRow {
+    const row = this.db.get<PaymentRow>('SELECT * FROM payments WHERE uid = ?', [paymentUid]);
+    if (!row) notFound('payment not found');
     return row;
   }
 
-  private refreshUser(uid: string): PublicUser {
-    const user = this.users.findByUid(uid);
-    if (!user) notFound('user not found');
-    return user;
-  }
-
-  private serialize(row: PaymentRow): PublicPayment {
+  private toPublic(row: PaymentRow): PaymentPublic {
     return {
-      uid: row.uid,
-      orderNumber: row.order_number,
-      credits: Number(row.credits),
-      amountMinor: Number(row.amount_minor),
-      currency: row.currency,
+      id: row.uid,
       status: row.status,
-      gatewayOrderId: row.gateway_order_id,
-      formUrl: row.form_url,
-      orderStatus: row.order_status === null ? null : Number(row.order_status),
-      actionCode: row.action_code,
-      errorCode: row.error_code,
-      errorMessage: row.error_message,
-      creditedAt: row.credited_at,
-      expiresAt: row.expires_at,
-      createdAt: row.created_at,
-      updatedAt: row.updated_at,
+      credits: row.credits,
+      amount_kzt: row.credits,
+      credited: Boolean(row.credited_at),
+      order_status: row.order_status,
+      created_at: row.created_at,
+      updated_at: row.updated_at,
     };
   }
-}
 
-function safeStringify(value: unknown): string {
-  try {
-    return JSON.stringify(value);
-  } catch {
-    return '"[unserializable]"';
+  private logEvent(paymentUid: string, eventType: string, message: string, detail?: unknown): void {
+    const detailJson = detail ? JSON.stringify(detail) : null;
+    this.db.run(
+      `INSERT INTO payment_events (payment_uid, event_type, message, detail_json, created_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      [paymentUid, eventType, message, detailJson, nowIso()],
+    );
+    this.logger.log(`[payment:${paymentUid}] ${eventType}: ${message}`);
   }
-}
 
-/** Callbacks arrive as query (GET) or form (POST); values may be string arrays. */
-function flattenParams(params: Record<string, unknown>): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(params)) {
-    if (Array.isArray(value)) out[key] = value.length ? String(value[0]) : '';
-    else if (value !== undefined && value !== null) out[key] = String(value);
+  private redactGatewayPayload(payload: VtbOrderStatus): VtbOrderStatus {
+    return payload;
   }
-  return out;
+
+  private redactParams(params: Record<string, string>): Record<string, string> {
+    const copy = { ...params };
+    delete copy.checksum;
+    return copy;
+  }
+
+  private verifyCallbackChecksum(params: Record<string, string>, secret: string): boolean {
+    const received = params.checksum ?? '';
+    if (!received) return false;
+
+    const entries = Object.entries(params)
+      .filter(([key]) => key !== 'checksum' && key !== 'sign_alias')
+      .sort(([a], [b]) => a.localeCompare(b));
+
+    const canonical = entries.map(([name, value]) => `${name};${value};`).join('');
+    const expected = crypto.createHmac('sha256', secret).update(canonical).digest('hex').toUpperCase();
+
+    try {
+      return crypto.timingSafeEqual(Buffer.from(received.toUpperCase()), Buffer.from(expected));
+    } catch {
+      return false;
+    }
+  }
 }

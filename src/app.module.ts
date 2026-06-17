@@ -10,7 +10,6 @@ import { HealthModule } from './health/health.module';
 import { JobsModule } from './jobs/jobs.module';
 import { LlmModule } from './llm/llm.module';
 import { PaymentsModule } from './payments/payments.module';
-
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: ['../.env', '.env'] }),
